@@ -81,7 +81,7 @@ function RecommendationPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-12">
+    <div className="px-6 py-8 md:px-10 md:py-10">
       <PageHeader
         eyebrow="Step 2 of 3"
         title="Agent recommendation"

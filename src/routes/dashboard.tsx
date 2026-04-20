@@ -54,10 +54,10 @@ function DashboardPage() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-12">
+    <div className="px-6 py-8 md:px-10 md:py-10">
       <PageHeader
         eyebrow="Vault overview"
-        title="Treasury position"
+        title="Good afternoon."
         description="A live view of your on-chain vault, allocations, and pending actions."
         actions={
           <>
