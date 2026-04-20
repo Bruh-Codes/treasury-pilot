@@ -10,49 +10,110 @@ import {
 import { vaultStore, useVault } from "@/lib/vault-store";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
-import { ArrowRight, Check, Lock } from "lucide-react";
+import {
+  ArrowRight,
+  Check,
+  Clock,
+  ShieldCheck,
+  Sparkles,
+  TrendingUp,
+  Wallet,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Card, CardHead, PageHeader } from "@/components/page-primitives";
 
 export const Route = createFileRoute("/policy")({
   head: () => ({
     meta: [
-      { title: "Policy · YieldPilot" },
+      { title: "Set up your vault · YieldPilot" },
       {
         name: "description",
         content:
-          "Configure your vault policy: risk preset, liquidity preference, and per-strategy allocation caps.",
+          "Pick how cautious you want to be and how quickly you need access to your money. YieldPilot handles the rest.",
       },
     ],
   }),
   component: PolicyPage,
 });
 
+// Friendly plan cards — map to the underlying risk/liquidity presets.
+type Plan = {
+  id: RiskPreset;
+  liquidity: LiquidityPreset;
+  name: string;
+  tagline: string;
+  icon: typeof ShieldCheck;
+  estApy: string;
+  points: string[];
+};
+
+const PLANS: Plan[] = [
+  {
+    id: "conservative",
+    liquidity: "instant",
+    name: "Keep it safe",
+    tagline: "Steady returns. Your money, always available.",
+    icon: ShieldCheck,
+    estApy: "~3.5%",
+    points: [
+      "Lower-risk lending markets only",
+      "Withdraw anytime — no waiting",
+      "Half your balance stays as cash",
+    ],
+  },
+  {
+    id: "balanced",
+    liquidity: "instant",
+    name: "Balanced",
+    tagline: "A mix of safety and yield. The popular choice.",
+    icon: Sparkles,
+    estApy: "~4.8%",
+    points: [
+      "Split across trusted lending markets",
+      "Withdraw anytime — no waiting",
+      "Smaller cash buffer, more earning",
+    ],
+  },
+  {
+    id: "yield",
+    liquidity: "weekly",
+    name: "Earn more",
+    tagline: "Higher yield. Small wait if you withdraw a lot.",
+    icon: TrendingUp,
+    estApy: "~7.2%",
+    points: [
+      "Adds one higher-yield strategy",
+      "Instant withdraw from cash buffer",
+      "Up to 3 days to unwind the rest",
+    ],
+  },
+];
+
 function PolicyPage() {
   const v = useVault();
   const router = useRouter();
-  const [risk, setRisk] = useState<RiskPreset>(v.policy?.risk ?? "balanced");
-  const [liquidity, setLiquidity] = useState<LiquidityPreset>(
-    v.policy?.liquidity ?? "instant",
-  );
-  const [perStrategy, setPerStrategy] = useState<number>(
-    Math.round((v.policy?.perStrategyMax ?? RISK_PRESETS[risk].perStrategyMax) * 100),
-  );
+  const [planId, setPlanId] = useState<RiskPreset>(v.policy?.risk ?? "balanced");
   const [depositAmount, setDepositAmount] = useState<string>("10000");
 
+  const plan = PLANS.find((p) => p.id === planId)!;
+  const amt = Number(depositAmount) || 0;
+  const preset = RISK_PRESETS[plan.id];
+  const idleUsd = amt * preset.idle;
+  const deployedUsd = amt - idleUsd;
+
   function save() {
-    if (!v.connected) {
-      vaultStore.connect();
-    }
-    vaultStore.setPolicy({ risk, liquidity, perStrategyMax: perStrategy / 100 });
-    const amt = Number(depositAmount);
+    if (!v.connected) vaultStore.connect();
+    vaultStore.setPolicy({
+      risk: plan.id,
+      liquidity: plan.liquidity,
+      perStrategyMax: preset.perStrategyMax,
+    });
     if (amt > 0 && amt <= v.walletUsdc) {
       vaultStore.deposit(amt);
-      toast.success("Policy saved & USDC deposited");
+      toast.success(`Deposited ${amt.toLocaleString()} USDC · ${plan.name} plan`);
     } else {
-      toast.success("Policy saved");
+      toast.success(`${plan.name} plan saved`);
     }
     router.navigate({ to: "/recommendation" });
   }
@@ -60,137 +121,162 @@ function PolicyPage() {
   return (
     <div className="px-6 py-8 md:px-10 md:py-10">
       <PageHeader
-        eyebrow="Step 1 of 3"
-        title="Configure your vault policy"
-        description="Set the rules the vault enforces. The agent only recommends allocations that satisfy this policy."
+        eyebrow="Step 1 of 3 · Quick setup"
+        title="How would you like to earn?"
+        description="Pick the style that fits you. You can change it anytime — and you're always in control of your money."
       />
 
-      <div className="mt-10 grid gap-6 lg:grid-cols-[1fr_320px]">
+      <div className="mt-10 grid gap-6 lg:grid-cols-[1fr_340px]">
         <div className="space-y-6">
-          {/* Risk */}
-          <Card>
-            <CardHead title="Risk preset" sub="How aggressively to deploy idle capital." />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {(Object.keys(RISK_PRESETS) as RiskPreset[]).map((k) => {
-                const p = RISK_PRESETS[k];
-                const active = risk === k;
-                return (
-                  <button
-                    key={k}
-                    onClick={() => {
-                      setRisk(k);
-                      setPerStrategy(Math.round(p.perStrategyMax * 100));
-                    }}
-                    className={cn(
-                      "group relative flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-all",
-                      active
-                        ? "border-foreground bg-accent"
-                        : "hairline hover:border-foreground/40",
-                    )}
-                  >
-                    <div className="flex w-full items-center justify-between">
-                      <span className="font-medium">{p.label}</span>
-                      {active && <Check className="h-4 w-4" />}
+          {/* Plan cards */}
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            {PLANS.map((p) => {
+              const active = planId === p.id;
+              const Icon = p.icon;
+              return (
+                <button
+                  key={p.id}
+                  onClick={() => setPlanId(p.id)}
+                  className={cn(
+                    "group relative flex flex-col gap-4 rounded-xl border p-5 text-left transition-all",
+                    active
+                      ? "border-foreground bg-accent shadow-[0_1px_0_0_var(--color-hairline)]"
+                      : "hairline hover:border-foreground/40",
+                  )}
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg border hairline bg-background">
+                      <Icon className="h-4 w-4" />
                     </div>
-                    <p className="text-xs text-muted-foreground">{p.description}</p>
-                    <div className="mt-2 flex items-center gap-3 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-                      <span>Idle {(p.idle * 100).toFixed(0)}%</span>
-                      <span className="h-1 w-1 rounded-full bg-muted-foreground/50" />
-                      <span>Max {(p.perStrategyMax * 100).toFixed(0)}%/strat</span>
+                    <div
+                      className={cn(
+                        "flex h-5 w-5 items-center justify-center rounded-full border",
+                        active
+                          ? "border-foreground bg-foreground text-background"
+                          : "border-muted-foreground/30",
+                      )}
+                    >
+                      {active && <Check className="h-3 w-3" />}
                     </div>
-                  </button>
-                );
-              })}
-            </div>
-          </Card>
+                  </div>
 
-          {/* Liquidity */}
+                  <div>
+                    <div className="font-display text-lg font-semibold">{p.name}</div>
+                    <p className="mt-1 text-sm text-muted-foreground">{p.tagline}</p>
+                  </div>
+
+                  <div className="flex items-baseline gap-2 border-t hairline pt-4">
+                    <span className="font-display text-2xl font-semibold tabular-nums">
+                      {p.estApy}
+                    </span>
+                    <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+                      est. yearly
+                    </span>
+                  </div>
+
+                  <ul className="space-y-2 text-sm">
+                    {p.points.map((pt) => (
+                      <li key={pt} className="flex items-start gap-2 text-muted-foreground">
+                        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-foreground/60" />
+                        <span>{pt}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* What this means — plain language */}
           <Card>
             <CardHead
-              title="Liquidity preference"
-              sub="The maximum unwind window you tolerate per strategy."
+              title={`What "${plan.name}" means for your money`}
+              sub="In plain English, no jargon."
             />
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {(Object.keys(LIQUIDITY_PRESETS) as LiquidityPreset[]).map((k) => {
-                const p = LIQUIDITY_PRESETS[k];
-                const active = liquidity === k;
-                return (
-                  <button
-                    key={k}
-                    onClick={() => setLiquidity(k)}
-                    className={cn(
-                      "flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition-all",
-                      active
-                        ? "border-foreground bg-accent"
-                        : "hairline hover:border-foreground/40",
-                    )}
-                  >
-                    <div className="flex w-full items-center justify-between">
-                      <span className="font-medium">{p.label}</span>
-                      {active && <Check className="h-4 w-4" />}
-                    </div>
-                    <p className="text-xs text-muted-foreground">{p.description}</p>
-                  </button>
-                );
-              })}
-            </div>
-          </Card>
-
-          {/* Per-strategy cap */}
-          <Card>
-            <CardHead
-              title="Maximum allocation per strategy"
-              sub="Hard cap enforced by the vault contract."
-            />
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-xs text-muted-foreground">0%</span>
-                <span className="font-display text-2xl font-semibold tabular-nums">
-                  {perStrategy}%
-                </span>
-                <span className="font-mono text-xs text-muted-foreground">100%</span>
-              </div>
-              <Slider
-                value={[perStrategy]}
-                onValueChange={([n]) => setPerStrategy(n)}
-                min={10}
-                max={100}
-                step={5}
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Explain
+                icon={Wallet}
+                label="Always cash"
+                value={`${(preset.idle * 100).toFixed(0)}%`}
+                sub="Ready to withdraw instantly"
+              />
+              <Explain
+                icon={TrendingUp}
+                label="Put to work"
+                value={`${((1 - preset.idle) * 100).toFixed(0)}%`}
+                sub="Earning yield in trusted markets"
+              />
+              <Explain
+                icon={Clock}
+                label="Withdraw time"
+                value={
+                  plan.liquidity === "instant"
+                    ? "Instant"
+                    : plan.liquidity === "weekly"
+                      ? "Up to 3 days"
+                      : "Flexible"
+                }
+                sub={
+                  plan.liquidity === "instant"
+                    ? "Any time, no delays"
+                    : "Only if you pull a large amount"
+                }
               />
             </div>
           </Card>
 
-          {/* Whitelist preview */}
+          {/* Where it goes */}
           <Card>
             <CardHead
-              title="Whitelisted strategies"
-              sub="Only these adapters can ever be called by the vault."
+              title="Where your money can go"
+              sub="These are the only places YieldPilot is allowed to use. Nothing else."
             />
             <div className="divide-y divide-border overflow-hidden rounded-lg border hairline">
-              {STRATEGIES.filter((s) => s.id !== "idle").map((s) => (
-                <div key={s.id} className="flex items-center justify-between p-4">
-                  <div>
-                    <div className="font-medium">{s.name}</div>
-                    <div className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
-                      {s.protocol}
+              {STRATEGIES.filter((s) => s.id !== "idle").map((s) => {
+                const allowed =
+                  plan.liquidity === "flexible" ||
+                  (plan.liquidity === "weekly" && s.liquidity !== "7 days") ||
+                  (plan.liquidity === "instant" && s.liquidity === "Instant");
+                return (
+                  <div
+                    key={s.id}
+                    className={cn(
+                      "flex items-center justify-between gap-4 p-4 transition-opacity",
+                      !allowed && "opacity-40",
+                    )}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium">{s.name}</span>
+                        {allowed ? (
+                          <span className="rounded-full border hairline px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+                            Allowed
+                          </span>
+                        ) : (
+                          <span className="rounded-full border hairline px-2 py-0.5 font-mono text-[9px] uppercase tracking-wider text-muted-foreground">
+                            Not in this plan
+                          </span>
+                        )}
+                      </div>
+                      <div className="font-mono text-[11px] uppercase tracking-wider text-muted-foreground">
+                        {s.protocol}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-6">
+                      <MiniCell label="Yield" value={`${s.apy.toFixed(2)}%`} />
+                      <MiniCell label="Access" value={s.liquidity} />
                     </div>
                   </div>
-                  <div className="flex items-center gap-6">
-                    <Cell label="APY" value={`${s.apy.toFixed(2)}%`} />
-                    <Cell label="Liquidity" value={s.liquidity} />
-                    <Cell label="Risk" value={s.risk} />
-                    <Lock className="h-3.5 w-3.5 text-muted-foreground" />
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Card>
         </div>
 
-        {/* Sidebar */}
+        {/* Sidebar: deposit + summary */}
         <aside className="space-y-6">
           <Card>
-            <CardHead title="Initial deposit" sub="USDC to fund the vault." />
+            <CardHead title="How much to start with?" sub="You can add or withdraw anytime." />
             <div className="space-y-3">
               <div className="relative">
                 <Input
@@ -204,7 +290,7 @@ function PolicyPage() {
                 </span>
               </div>
               <div className="flex items-center justify-between text-xs text-muted-foreground">
-                <span>Wallet balance</span>
+                <span>In your wallet</span>
                 <span className="font-mono tabular-nums">
                   {v.walletUsdc.toLocaleString()} USDC
                 </span>
@@ -226,25 +312,31 @@ function PolicyPage() {
           </Card>
 
           <Card>
-            <CardHead title="Summary" />
-            <dl className="space-y-2 text-sm">
-              <Row k="Risk" v={RISK_PRESETS[risk].label} />
-              <Row k="Liquidity" v={LIQUIDITY_PRESETS[liquidity].label} />
-              <Row k="Per-strategy cap" v={`${perStrategy}%`} />
+            <CardHead title="Your setup" />
+            <dl className="space-y-3 text-sm">
+              <Row k="Plan" v={plan.name} />
               <Row
-                k="Idle reserve"
-                v={`${(RISK_PRESETS[risk].idle * 100).toFixed(0)}%`}
+                k="Kept as cash"
+                v={`${idleUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDC`}
+              />
+              <Row
+                k="Put to work"
+                v={`${deployedUsd.toLocaleString(undefined, { maximumFractionDigits: 0 })} USDC`}
+              />
+              <Row
+                k="Est. yearly earnings"
+                v={`~${((amt * parseFloat(plan.estApy.replace(/[^0-9.]/g, ""))) / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })} USDC`}
               />
             </dl>
           </Card>
 
           <Button onClick={save} className="w-full" size="lg">
-            Save policy & continue
+            Continue
             <ArrowRight className="ml-1 h-4 w-4" />
           </Button>
-          <p className="text-center text-[11px] text-muted-foreground">
-            By continuing, you authorize the vault to enforce this policy on-chain. The
-            agent never moves funds without your approval.
+          <p className="text-center text-[11px] leading-relaxed text-muted-foreground">
+            You'll see exactly where your money goes before anything happens. Nothing
+            moves without your approval.
           </p>
         </aside>
       </div>
@@ -261,13 +353,36 @@ function Row({ k, v }: { k: string; v: string }) {
   );
 }
 
-function Cell({ label, value }: { label: string; value: string }) {
+function MiniCell({ label, value }: { label: string; value: string }) {
   return (
     <div className="hidden flex-col items-end sm:flex">
       <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
         {label}
       </span>
       <span className="font-mono text-sm tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+function Explain({
+  icon: Icon,
+  label,
+  value,
+  sub,
+}: {
+  icon: typeof ShieldCheck;
+  label: string;
+  value: string;
+  sub: string;
+}) {
+  return (
+    <div className="rounded-lg border hairline p-4">
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" />
+        <span className="font-mono text-[10px] uppercase tracking-wider">{label}</span>
+      </div>
+      <div className="mt-2 font-display text-xl font-semibold tabular-nums">{value}</div>
+      <div className="mt-1 text-xs text-muted-foreground">{sub}</div>
     </div>
   );
 }
