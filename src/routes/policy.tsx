@@ -14,6 +14,7 @@ import { Slider } from "@/components/ui/slider";
 import { Input } from "@/components/ui/input";
 import { ArrowRight, Check, Lock } from "lucide-react";
 import { toast } from "sonner";
+import { Card, CardHead, PageHeader } from "@/components/page-primitives";
 
 export const Route = createFileRoute("/policy")({
   head: () => ({
