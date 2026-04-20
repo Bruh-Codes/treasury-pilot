@@ -1,8 +1,9 @@
 import { Outlet, createRootRoute, HeadContent, Scripts, Link } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
-import { SiteHeader } from "@/components/site-header";
-import { SiteFooter } from "@/components/site-footer";
+import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
+import { AppSidebar } from "@/components/app-sidebar";
+import { TopBar } from "@/components/top-bar";
 import { Toaster } from "@/components/ui/sonner";
 
 function NotFoundComponent() {
@@ -72,13 +73,17 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <SiteHeader />
-      <main className="flex-1">
-        <Outlet />
-      </main>
-      <SiteFooter />
-      <Toaster />
-    </div>
+    <SidebarProvider defaultOpen>
+      <div className="flex min-h-screen w-full bg-background text-foreground">
+        <AppSidebar />
+        <SidebarInset className="flex min-h-screen flex-1 flex-col bg-background">
+          <TopBar />
+          <main className="flex-1">
+            <Outlet />
+          </main>
+        </SidebarInset>
+        <Toaster />
+      </div>
+    </SidebarProvider>
   );
 }

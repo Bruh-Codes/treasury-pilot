@@ -70,7 +70,7 @@ function WithdrawPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl px-6 py-12">
+    <div className="px-6 py-8 md:px-10 md:py-10">
       <PageHeader
         eyebrow="Withdraw"
         title="Get your USDC back"
