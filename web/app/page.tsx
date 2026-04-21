@@ -44,6 +44,7 @@ import {
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { APP_SUPPORTED_CHAINS, PRIMARY_CHAIN_LABEL } from "@/lib/app-chains";
 import { useVault, vaultStore } from "@/lib/vault-store";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
@@ -565,7 +566,8 @@ export default function DepositPage() {
 		const amount = Number(depositAmount) || 0;
 		if (amount <= 0 || amount > depositAsset.walletBalance) return;
 		if (!vault.connected) {
-			vaultStore.connect();
+			toast.error("Connect your wallet first");
+			return;
 		}
 		vaultStore.deposit(amount);
 		setDepositAsset(null);
@@ -1021,7 +1023,7 @@ export default function DepositPage() {
 										label="Network"
 										right={
 											<span className="text-sm font-semibold text-foreground">
-												Arbitrum
+												{PRIMARY_CHAIN_LABEL}
 											</span>
 										}
 									/>
@@ -1137,11 +1139,25 @@ export default function DepositPage() {
 						</div>
 
 						<div className="mt-5 rounded-[22px] border border-border/60 bg-card px-5 py-4">
-							<div className="flex items-center gap-3">
-								<ArbitrumIcon />
-								<div className="text-[18px] font-semibold text-foreground">
-									Arbitrum
-								</div>
+							<div className="space-y-4">
+								{APP_SUPPORTED_CHAINS.map((chain) => (
+									<div
+										key={chain.id}
+										className="flex items-center justify-between gap-3"
+									>
+										<div className="flex items-center gap-3">
+											<ArbitrumIcon />
+											<div>
+												<div className="text-[16px] font-semibold text-foreground">
+													{chain.name}
+												</div>
+												<div className="text-[12px] text-muted-foreground">
+													{chain.badge}
+												</div>
+											</div>
+										</div>
+									</div>
+								))}
 							</div>
 						</div>
 

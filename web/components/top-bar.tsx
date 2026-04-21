@@ -1,16 +1,24 @@
 "use client";
 
 import { ArrowLeftRight, Search } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useEffect } from "react";
+import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { useVault, vaultStore } from "@/lib/vault-store";
+import { reownEnabled } from "@/lib/reown";
+import { toast } from "sonner";
 
 export function TopBar() {
 	const v = useVault();
-	const router = useRouter();
+	const { open } = useAppKit();
+	const { address } = useAppKitAccount();
+
+	useEffect(() => {
+		vaultStore.syncWallet(address ?? null);
+	}, [address]);
 
 	return (
 		<div className="flex h-16 items-center gap-2.5 border-b border-border bg-background px-3 md:px-6">
@@ -39,7 +47,7 @@ export function TopBar() {
 						variant="secondary"
 						size="lg"
 						className="h-10 rounded-full px-3 text-sm"
-						onClick={() => vaultStore.disconnect()}
+						onClick={() => open()}
 					>
 						<Avatar className="size-7">
 							<AvatarFallback className="bg-[radial-gradient(circle_at_35%_35%,#3772ff_0%,#7c3aed_100%)] text-white">
@@ -53,8 +61,13 @@ export function TopBar() {
 						size="lg"
 						className="h-10 rounded-full px-4 text-sm"
 						onClick={() => {
-							vaultStore.connect();
-							router.push("/policy");
+							if (!reownEnabled) {
+								toast.error(
+									"Set NEXT_PUBLIC_REOWN_PROJECT_ID to enable Reown wallet connect.",
+								);
+								return;
+							}
+							open();
 						}}
 					>
 						Connect Wallet

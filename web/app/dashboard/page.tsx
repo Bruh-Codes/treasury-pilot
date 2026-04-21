@@ -23,6 +23,7 @@ import {
 	formatUsd,
 	generateRecommendation,
 } from "@/lib/yieldpilot-data";
+import { PRIMARY_CHAIN_LABEL } from "@/lib/app-chains";
 import {
 	Activity,
 	ArrowRight,
@@ -70,15 +71,6 @@ function DashboardPage() {
 							asChild
 						>
 							<Link href="/withdraw">Withdraw</Link>
-						</Button>
-						<Button
-							className="h-11 rounded-full px-5 text-sm"
-							asChild
-						>
-							<Link href="/">
-								<Sparkles className="mr-1 size-4" />
-								Get recommendation
-							</Link>
 						</Button>
 					</>
 				}
@@ -223,7 +215,7 @@ function DashboardPage() {
 									<Activity className="h-4 w-4 text-muted-foreground" />
 									<span className="text-sm">Network</span>
 								</div>
-								<span className="font-mono text-xs">Arbitrum Sepolia</span>
+								<span className="font-mono text-xs">{PRIMARY_CHAIN_LABEL}</span>
 							</div>
 							{v.pendingWithdraw && (
 								<div className="rounded-[16px] border hairline bg-background p-3">
@@ -339,13 +331,13 @@ function EmptyState() {
 				No vault yet
 			</h1>
 			<p className="mt-3 max-w-md text-muted-foreground">
-				Configure a policy and make your first USDC deposit to begin. The agent
-				will then recommend a policy-compliant allocation.
+				Make your first USDC deposit to begin. YieldPilot will use the funds in
+				the vault to prepare the next recommendation flow from deposit.
 			</p>
 			<div className="mt-8 flex gap-3">
 				<Button asChild>
-					<Link href="/policy">
-						Create vault
+					<Link href="/">
+						Deposit funds
 						<ArrowRight className="ml-1 h-4 w-4" />
 					</Link>
 				</Button>

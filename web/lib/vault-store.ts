@@ -67,6 +67,10 @@ function set(updater: (s: VaultState) => VaultState) {
 	persist();
 }
 
+function shortenAddress(address: string) {
+	return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
 function pushHistory(label: string) {
 	state.history = [{ ts: Date.now(), label }, ...state.history].slice(0, 20);
 }
@@ -86,6 +90,13 @@ export const vaultStore = {
 	},
 	disconnect() {
 		set((s) => ({ ...s, connected: false, address: null }));
+	},
+	syncWallet(address: string | null) {
+		set((s) => ({
+			...s,
+			connected: Boolean(address),
+			address: address ? shortenAddress(address) : null,
+		}));
 	},
 	setPolicy(policy: NonNullable<VaultState["policy"]>) {
 		set((s) => {
