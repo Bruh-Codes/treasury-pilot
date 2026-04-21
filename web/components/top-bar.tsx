@@ -1,24 +1,17 @@
 "use client";
 
 import { ArrowLeftRight, Search } from "lucide-react";
-import { useEffect } from "react";
 import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
-import { useVault, vaultStore } from "@/lib/vault-store";
 import { reownEnabled } from "@/lib/reown";
 import { toast } from "sonner";
 
 export function TopBar() {
-	const v = useVault();
 	const { open } = useAppKit();
 	const { address } = useAppKitAccount();
-
-	useEffect(() => {
-		vaultStore.syncWallet(address ?? null);
-	}, [address]);
 
 	return (
 		<div className="flex h-16 items-center gap-2.5 border-b border-border bg-background px-3 md:px-6">
@@ -42,7 +35,7 @@ export function TopBar() {
 					Swap
 				</Button>
 
-				{v.connected ? (
+				{address ? (
 					<Button
 						variant="secondary"
 						size="lg"
@@ -54,7 +47,9 @@ export function TopBar() {
 								0x
 							</AvatarFallback>
 						</Avatar>
-						<span className="font-mono text-xs">{v.address}</span>
+						<span className="font-mono text-xs">
+							{`${address.slice(0, 6)}...${address.slice(-4)}`}
+						</span>
 					</Button>
 				) : (
 					<Button

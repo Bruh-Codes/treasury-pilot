@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useAppKitAccount } from "@reown/appkit/react";
 import {
 	CircleArrowDown,
 	ChevronDown,
@@ -45,7 +46,7 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { APP_SUPPORTED_CHAINS, PRIMARY_CHAIN_LABEL } from "@/lib/app-chains";
-import { useVault, vaultStore } from "@/lib/vault-store";
+import { useAssetSummaries } from "@/lib/use-yieldpilot-market-data";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 
@@ -53,7 +54,7 @@ type AssetItem = {
 	id: string;
 	name: string;
 	symbol: string;
-	iconUrl: string;
+	iconUrl?: string;
 	walletBalance: number;
 	deposited: string;
 	apy: string;
@@ -67,147 +68,65 @@ type RangeKey = "1D" | "1W" | "1M" | "6M" | "1Y" | "All";
 
 const RANGE_OPTIONS: RangeKey[] = ["1D", "1W", "1M", "6M", "1Y", "All"];
 
-const ASSETS: AssetItem[] = [
-	{
-		id: "usdc",
-		name: "USD Coin",
-		symbol: "USDC",
+const ASSET_VISUALS: Record<string, { iconUrl?: string; iconClass: string }> = {
+	USDC: {
 		iconUrl:
 			"https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/usdc.png",
-		walletBalance: 15000,
-		deposited: "-",
-		apy: "2.89% - 4.42%",
-		totalDeposits: "3.43M USDC",
-		availableLiquidity: "351.84K USDC",
-		supported: true,
 		iconClass: "from-sky-400 to-blue-600",
 	},
-	{
-		id: "usdt",
-		name: "Tether USD",
-		symbol: "USDT",
+	USDT: {
 		iconUrl:
 			"https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/usdt.png",
-		walletBalance: 0,
-		deposited: "-",
-		apy: "0.15% - 2.23%",
-		totalDeposits: "2.08M USDT",
-		availableLiquidity: "735.14K USDT",
-		supported: false,
 		iconClass: "from-emerald-400 to-teal-600",
 	},
-	{
-		id: "rlusd",
-		name: "RLUSD",
-		symbol: "RLUSD",
-		iconUrl: "https://cryptologos.cc/logos/ripple-usd-rlusd-logo.png?v=040",
-		walletBalance: 0,
-		deposited: "-",
-		apy: "0%",
-		totalDeposits: "10.00 RLUSD",
-		availableLiquidity: "9.85 RLUSD",
-		supported: false,
-		iconClass: "from-blue-400 to-indigo-600",
-	},
-	{
-		id: "eth",
-		name: "Ether",
-		symbol: "ETH",
+	ETH: {
 		iconUrl:
 			"https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/eth.png",
-		walletBalance: 0,
-		deposited: "-",
-		apy: "4.64%",
-		totalDeposits: "4.02K ETH",
-		availableLiquidity: "613.97 ETH",
-		supported: false,
 		iconClass: "from-slate-500 to-slate-700",
 	},
-	{
-		id: "wsteth",
-		name: "Wrapped stETH",
-		symbol: "wstETH",
-		iconUrl: "https://assets.coingecko.com/coins/images/18834/large/wstETH.png",
-		walletBalance: 0,
-		deposited: "-",
-		apy: "0%",
-		totalDeposits: "669.82 wstETH",
-		availableLiquidity: "669.82 wstETH",
-		supported: false,
-		iconClass: "from-cyan-400 to-sky-600",
-	},
-	{
-		id: "weeth",
-		name: "Wrapped eETH",
-		symbol: "weETH",
-		iconUrl: "https://assets.coingecko.com/coins/images/33033/large/weETH.png",
-		walletBalance: 0,
-		deposited: "-",
-		apy: "0%",
-		totalDeposits: "1.96K weETH",
-		availableLiquidity: "1.96K weETH",
-		supported: false,
-		iconClass: "from-fuchsia-400 to-violet-600",
-	},
-	{
-		id: "wbtc",
-		name: "Wrapped BTC",
-		symbol: "WBTC",
+	WBTC: {
 		iconUrl:
 			"https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/wbtc.png",
-		walletBalance: 0,
-		deposited: "-",
-		apy: "0.01%",
-		totalDeposits: "69.91 WBTC",
-		availableLiquidity: "68.91 WBTC",
-		supported: false,
 		iconClass: "from-orange-400 to-amber-500",
 	},
-	{
-		id: "usde",
-		name: "USDe",
-		symbol: "USDe",
+	wstETH: {
+		iconUrl: "https://assets.coingecko.com/coins/images/18834/large/wstETH.png",
+		iconClass: "from-cyan-400 to-sky-600",
+	},
+	weETH: {
+		iconUrl: "https://assets.coingecko.com/coins/images/33033/large/weETH.png",
+		iconClass: "from-fuchsia-400 to-violet-600",
+	},
+	USDe: {
 		iconUrl: "https://assets.coingecko.com/coins/images/33613/large/usde.png",
-		walletBalance: 0,
-		deposited: "-",
-		apy: "1.42%",
-		totalDeposits: "12.49K USDe",
-		availableLiquidity: "4.80K USDe",
-		supported: false,
 		iconClass: "from-zinc-300 to-zinc-500",
 	},
-	{
-		id: "link",
-		name: "ChainLink Token",
-		symbol: "LINK",
+	LINK: {
 		iconUrl:
 			"https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/link.png",
-		walletBalance: 0,
-		deposited: "-",
-		apy: "0%",
-		totalDeposits: "53.62K LINK",
-		availableLiquidity: "53.40K LINK",
-		supported: false,
 		iconClass: "from-blue-500 to-blue-700",
 	},
-	{
-		id: "aave",
-		name: "Aave Token",
-		symbol: "AAVE",
+	AAVE: {
 		iconUrl:
 			"https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/aave.png",
-		walletBalance: 0,
-		deposited: "-",
-		apy: "0%",
-		totalDeposits: "4.51K AAVE",
-		availableLiquidity: "4.50K AAVE",
-		supported: false,
 		iconClass: "from-violet-400 to-purple-600",
 	},
-];
+	RLUSD: {
+		iconUrl: "https://cryptologos.cc/logos/ripple-usd-rlusd-logo.png?v=040",
+		iconClass: "from-blue-400 to-indigo-600",
+	},
+};
+
+function compactAmount(value: number) {
+	return new Intl.NumberFormat("en-US", {
+		maximumFractionDigits: 2,
+		notation: value >= 1000 ? "compact" : "standard",
+	}).format(value);
+}
 
 export default function DepositPage() {
-	const vault = useVault();
+	const assetSummaries = useAssetSummaries();
+	const { address } = useAppKitAccount();
 	const [search, setSearch] = useState("");
 	const [noBalanceAsset, setNoBalanceAsset] = useState<AssetItem | null>(null);
 	const [depositAsset, setDepositAsset] = useState<AssetItem | null>(null);
@@ -216,16 +135,65 @@ export default function DepositPage() {
 	const [chainsOpen, setChainsOpen] = useState(false);
 	const [selectedRange, setSelectedRange] = useState<RangeKey>("1W");
 	const vaultAddress = "0x8F3A...C2E7";
-
-	const assets = useMemo(
-		() =>
-			ASSETS.map((asset) =>
-				asset.id === "usdc"
-					? { ...asset, walletBalance: vault.walletUsdc }
-					: asset,
-			),
-		[vault.walletUsdc],
+	const summaries = assetSummaries.data?.assets ?? [];
+	const totalMarketTvl = summaries.reduce(
+		(sum, asset) => sum + asset.totalTvlUsd,
+		0,
 	);
+	const supportedAssetCount = summaries.filter((asset) => asset.supported).length;
+	const averageAssetApy =
+		summaries.length > 0
+			? summaries.reduce((sum, asset) => sum + asset.averageApy, 0) /
+				summaries.length
+			: 0;
+
+	const assets = useMemo(() => {
+		if (summaries.length === 0) {
+			return [
+				{
+					id: "usdc",
+					name: "USD Coin",
+					symbol: "USDC",
+					iconUrl: ASSET_VISUALS.USDC.iconUrl,
+					walletBalance: 0,
+					deposited: "-",
+					apy: assetSummaries.isLoading ? "Loading..." : "-",
+					totalDeposits: "-",
+					availableLiquidity: "-",
+					supported: true,
+					iconClass: ASSET_VISUALS.USDC.iconClass,
+				},
+			] satisfies AssetItem[];
+		}
+
+		return summaries.map((summary) => {
+			const visuals = ASSET_VISUALS[summary.symbol] ?? {
+				iconClass: "from-neutral-500 to-neutral-700",
+			};
+			return {
+				id: summary.symbol.toLowerCase(),
+				name: summary.name,
+				symbol: summary.symbol,
+				iconUrl: summary.iconUrl ?? visuals.iconUrl,
+				walletBalance: 0,
+				deposited: "-",
+				apy:
+					summary.protocolCount > 0
+						? `${summary.averageApy.toFixed(2)}% avg`
+						: "-",
+				totalDeposits:
+					summary.totalTvlUsd > 0
+						? `${compactAmount(summary.totalTvlUsd)} TVL`
+						: "-",
+				availableLiquidity:
+					summary.availableLiquidityUsd > 0
+						? `${compactAmount(summary.availableLiquidityUsd)} liquid`
+						: "-",
+				supported: summary.supported,
+				iconClass: visuals.iconClass,
+			};
+		});
+	}, [assetSummaries.isLoading, summaries]);
 
 	const filtered = useMemo(() => {
 		const term = search.trim().toLowerCase();
@@ -275,7 +243,7 @@ export default function DepositPage() {
 	} satisfies ChartConfig;
 
 	const chartData = useMemo(() => {
-		const base = Math.max(vault.vaultBalance || 0, 25000);
+		const base = Math.max(totalMarketTvl || 0, 25000);
 		const series: Record<
 			RangeKey,
 			Array<{
@@ -538,7 +506,7 @@ export default function DepositPage() {
 			],
 		};
 		return series[selectedRange];
-	}, [selectedRange, vault.vaultBalance]);
+	}, [selectedRange, totalMarketTvl]);
 
 	function openDeposit(asset: AssetItem) {
 		setDepositAsset(asset);
@@ -564,14 +532,16 @@ export default function DepositPage() {
 	function confirmDeposit() {
 		if (!depositAsset) return;
 		const amount = Number(depositAmount) || 0;
-		if (amount <= 0 || amount > depositAsset.walletBalance) return;
-		if (!vault.connected) {
+		if (amount <= 0) return;
+		if (!address) {
 			toast.error("Connect your wallet first");
 			return;
 		}
-		vaultStore.deposit(amount);
 		setDepositAsset(null);
-		toast.success("Deposit received in the vault");
+		toast.message("Live deposit execution is not wired yet", {
+			description:
+				"Demo vault balances were removed. The next step is connecting this flow to the deployed vault contract.",
+		});
 	}
 
 	function copyVaultAddress() {
@@ -612,14 +582,14 @@ export default function DepositPage() {
 							<div>
 								<div className="text-[36px] font-semibold tracking-tight text-foreground md:text-[44px]">
 									$
-									{vault.vaultBalance.toLocaleString(undefined, {
+									{totalMarketTvl.toLocaleString(undefined, {
 										minimumFractionDigits: 2,
 										maximumFractionDigits: 2,
 									})}
 								</div>
 								<div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-									Balance
-									<MetricTooltip text="Total funds currently attributed to your position in the shared vault.">
+									Live TVL
+									<MetricTooltip text="Total live TVL across the asset summaries currently returned from the Arbitrum market registry.">
 										<Info className="size-3.5" />
 									</MetricTooltip>
 								</div>
@@ -628,28 +598,24 @@ export default function DepositPage() {
 							<div className="border-t border-border pt-4">
 								<div className="flex items-center justify-between py-2.5 text-sm">
 									<div className="flex items-center gap-1.5 text-muted-foreground">
-										Position APY
-										<MetricTooltip text="Estimated annualized yield for your current deposited position based on active allocations.">
+										Average APY
+										<MetricTooltip text="Average APY across the live asset registry rows shown below.">
 											<Info className="size-3.5" />
 										</MetricTooltip>
 									</div>
 									<span className="font-semibold text-foreground">
-										{vault.vaultBalance > 0 ? "4.12%" : "0.00%"}
+										{averageAssetApy.toFixed(2)}%
 									</span>
 								</div>
 								<div className="flex items-center justify-between py-2.5 text-sm">
 									<div className="flex items-center gap-1.5 text-muted-foreground">
-										Total earnings
-										<MetricTooltip text="Net yield accrued so far from your participation in the shared vault.">
+										Supported assets
+										<MetricTooltip text="How many assets in the live registry are currently marked as supported for routing and recommendation flows.">
 											<Info className="size-3.5" />
 										</MetricTooltip>
 									</div>
 									<span className="font-semibold text-foreground">
-										$
-										{Math.max(vault.vaultBalance * 0.021, 0).toLocaleString(
-											undefined,
-											{ minimumFractionDigits: 2, maximumFractionDigits: 2 },
-										)}
+										{supportedAssetCount}
 									</span>
 								</div>
 							</div>
@@ -812,7 +778,7 @@ export default function DepositPage() {
 										Market board
 									</CardTitle>
 									<p className="mt-1 text-sm text-muted-foreground">
-										One asset table and live deposit metrics
+										Arbitrum market data from the live protocol registry
 									</p>
 								</div>
 							</div>
@@ -1265,7 +1231,10 @@ function ArbitrumIcon() {
 				<circle cx="16" cy="16" r="16" fill="#1F2937" />
 				<path d="M16 5l8 4.6v12.8L16 27l-8-4.6V9.6L16 5z" fill="#213147" />
 				<path d="M19.9 10.7l-1.6 4.1 2.7 6.9 2.1-1.2-3.2-9.8z" fill="#12AAFF" />
-				<path d="M15.6 8.8l-5.1 12.8 2.1 1.2 5.1-12.8-2.1-1.2z" fill="#FFFFFF" />
+				<path
+					d="M15.6 8.8l-5.1 12.8 2.1 1.2 5.1-12.8-2.1-1.2z"
+					fill="#FFFFFF"
+				/>
 				<path d="M13.7 17.6h4.8l.8 2.2h-4.8l-.8-2.2z" fill="#9DCCED" />
 			</svg>
 		</div>
