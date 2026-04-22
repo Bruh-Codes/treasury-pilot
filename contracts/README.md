@@ -1,69 +1,104 @@
 # YieldPilot Contracts
 
-Upgradeable smart contracts for YieldPilot's shared vault architecture, built with Hardhat 3, Ignition, viem, and OpenZeppelin.
+Smart contracts for YieldPilot's shared-vault architecture, built with Hardhat 3, Ignition, viem, and OpenZeppelin.
 
-## What is included
+## Overview
 
-- `YieldPilotVault`: the shared ERC-4626 vault implementation
-- `YieldPilotVaultStrategyManager`: internal strategy registry, accounting, and withdrawal queue module
-- `YieldPilotVaultUpgradeMock`: a test-only upgrade target
-- `IStrategyAdapter`: interface for whitelisted strategy destinations
-- `MockERC20`: test asset used in local environments
-- `MockStrategyAdapter`: test adapter used to model capital deployment and unwind flows
-- `ReentrantStrategyAdapter`: malicious test adapter used to verify callback reentrancy protections
-- Ignition modules for:
-  - transparent proxy deployment
-  - proxy upgrade through `ProxyAdmin`
+The contracts workspace centers on a single ERC-4626 vault implementation per supported asset. Users deposit the underlying token and receive vault shares. Strategy execution is abstracted behind whitelisted adapters, while withdrawals are serviced from idle liquidity first and then from strategy recalls if needed.
 
-## Architecture
+Core components:
 
-YieldPilot uses a single shared vault per supported asset:
+- `YieldPilotVault.sol`: upgradeable ERC-4626 vault, admin controls, liquidity management, and strategy interactions
+- `YieldPilotVaultStrategyManager.sol`: strategy whitelist state, active-strategy tracking, accounting, and withdrawal queue management
+- `IStrategyAdapter.sol`: interface each strategy adapter must satisfy
+- `YieldPilotVaultUpgradeMock.sol`: test-only upgrade target used to verify storage continuity and upgrade execution
+- mocks for assets and adversarial adapters used in the test suite
 
-- users deposit an ERC-20 asset into the vault
-- the vault can keep a portion of funds idle for faster withdrawals
-- the owner can allocate idle funds into whitelisted strategy adapters
-- active strategies are tracked separately from the ordered withdrawal queue
-- withdrawals consume idle liquidity first
-- if idle funds are insufficient, the vault recalls liquidity from strategies in the configured queue order
+## Vault Mechanics
 
-This means users do not withdraw protocol-by-protocol. They request a withdrawal from the vault, and the vault orchestrates the unwind path behind the scenes.
+### User flow
 
-The implementation is split by responsibility:
+1. a user deposits an ERC-20 asset
+2. the vault mints ERC-4626 shares to the user
+3. the operator can deploy idle assets into approved strategies
+4. a user withdraws by redeeming shares for underlying assets
+5. if the vault does not have enough idle assets, it recalls capital from strategies using the configured withdrawal queue
 
-- `YieldPilotVault.sol` keeps the ERC-4626 surface, owner-facing orchestration, and liquidity logic
-- `YieldPilotVaultStrategyManager.sol` owns strategy whitelist state, active strategy tracking, accounting, and queue management
+### Accounting model
 
-## Proxy pattern
+`totalAssets()` is defined as:
 
-The deployment follows Hardhat Ignition's documented transparent proxy flow:
+- vault-held idle assets
+- plus `totalAllocatedAssets` tracked for active strategies
 
-- deploy `YieldPilotVault`
-- deploy `TransparentUpgradeableProxy`
-- recover the auto-created `ProxyAdmin` from the proxy's `AdminChanged` event
-- interact with the vault through the proxy address
-- upgrade through `ProxyAdmin.upgradeAndCall(...)`
+The vault keeps per-strategy accounting and supports `syncStrategyAssets(...)` so gains or paused-loss events can be reflected in vault accounting.
 
-Reference:
-- [Hardhat Ignition: Upgradeable Contracts](https://hardhat.org/ignition/docs/guides/upgradeable-proxies)
+### Strategy model
 
-## Project structure
+Strategies are external adapter contracts, not embedded protocol integrations. Each adapter must:
+
+- manage a single asset matching the vault asset
+- expose `asset()`
+- expose `totalAssets()`
+- accept `deposit(uint256 assets)`
+- support `withdrawTo(address receiver, uint256 assets)`
+
+The vault only interacts with whitelisted adapters.
+
+## Security Properties
+
+The current implementation includes the following hardening:
+
+- transparent proxy deployment with initializer locking on the implementation
+- non-reentrant vault entrypoints and strategy interaction flows
+- explicit pause controls for deposits and strategy deployment
+- two-step ownership transfer via `Ownable2StepUpgradeable`
+- disabled ownership renounce to avoid permanently orphaning controls
+- rejection of fee-on-transfer or short-receipt asset behavior during deposits
+- rejection of strategy deploy/recall misreporting based on actual token balance deltas
+- requirement that realized strategy losses can only be synced while the vault is paused
+
+## Important Trust Boundaries
+
+The vault is safer than the original version, but it is not trustless.
+
+Production assumptions still include:
+
+- the owner is trusted to manage pause, strategy whitelist, deployment, recall, and sync operations
+- the proxy admin is trusted to perform upgrades safely
+- each whitelisted strategy adapter is trusted code and must be reviewed separately
+- `syncStrategyAssets(...)` still relies on the adapter's reported `totalAssets()` value
+
+For real deployments, the owner and proxy admin should be multisig or timelock controlled.
+
+## Project Structure
 
 ```text
 contracts/
   contracts/
     interfaces/
+      IStrategyAdapter.sol
     mocks/
+      FeeOnTransferERC20.sol
+      MisreportingStrategyAdapter.sol
+      MockERC20.sol
+      MockStrategyAdapter.sol
+      ReentrantStrategyAdapter.sol
+      YieldPilotVaultUpgradeMock.sol
+    ProxyArtifacts.sol
     YieldPilotVault.sol
     YieldPilotVaultStrategyManager.sol
   ignition/
     modules/
-      YieldPilotVaultProxy.ts
       UpgradeYieldPilotVault.ts
+      YieldPilotVaultProxy.ts
+  scripts/
+    send-op-tx.ts
   test/
     YieldPilotVault.ts
 ```
 
-## Commands
+## Getting Started
 
 Install dependencies:
 
@@ -71,7 +106,7 @@ Install dependencies:
 yarn install
 ```
 
-Compile:
+Compile contracts:
 
 ```bash
 npx hardhat compile
@@ -83,17 +118,25 @@ Run tests:
 npx hardhat test
 ```
 
-## Deploy with Ignition
+## Deployment
 
-Deploy the proxy-backed vault to a local simulated network:
+The repository uses Hardhat Ignition with an OpenZeppelin transparent proxy.
+
+Deployment flow:
+
+1. deploy `YieldPilotVault`
+2. deploy `TransparentUpgradeableProxy`
+3. initialize the vault through the proxy
+4. recover the auto-created `ProxyAdmin`
+5. interact with the vault through the proxy address
+
+Local example:
 
 ```bash
 npx hardhat ignition deploy ignition/modules/YieldPilotVaultProxy.ts --parameters ignition/parameters/local-vault.json
 ```
 
-Create the parameters file first. The example below is illustrative and is not currently checked into the repository.
-
-Example parameters file:
+Example parameter file:
 
 ```json
 {
@@ -105,15 +148,13 @@ Example parameters file:
 }
 ```
 
-Upgrade the deployed vault:
+Upgrade example:
 
 ```bash
 npx hardhat ignition deploy ignition/modules/UpgradeYieldPilotVault.ts --parameters ignition/parameters/local-upgrade.json
 ```
 
-Create the parameters file first. The example below is illustrative and is not currently checked into the repository.
-
-Example upgrade parameters file:
+Example upgrade parameter file:
 
 ```json
 {
@@ -128,26 +169,34 @@ Example upgrade parameters file:
 }
 ```
 
-## Test coverage
+## Test Coverage
 
-The test suite currently verifies:
+The current suite covers:
 
-- transparent proxy deployment through Ignition
-- retrieval of the proxy admin from `AdminChanged`
+- proxy deployment and proxy admin recovery
 - deposits into the proxy-backed vault
-- allocation into multiple whitelisted strategies
-- withdrawals using idle liquidity first
-- automatic unwind from strategy positions when idle funds are insufficient
-- configured withdrawal queue ordering during unwind
-- reentrancy protection against strategy callbacks during deployment
-- reentrancy protection against strategy callbacks during withdrawal unwinds
-- upgrade from the production vault implementation into the test-only upgrade mock while preserving state
-- dedicated Ignition upgrade module execution
+- allocation across multiple strategies
+- withdrawals from idle liquidity
+- automatic unwind from strategies when idle liquidity is insufficient
+- configured withdrawal queue ordering
+- strategy callback reentrancy protections during deploy and unwind
+- upgrade execution and storage continuity
+- implementation initializer locking
+- rejection of unsupported fee-on-transfer asset behavior
+- rejection of strategy deploy/recall misreporting
+- two-step ownership transfer behavior
+- blocked ownership renounce
+- loss sync requiring the vault to be paused first
 
-## Notes
+## Operator Notes
 
-- The vault currently assumes one asset per vault instance.
-- Strategy adapters are intentionally simple in the mock setup; production adapters should add stronger accounting, access control, and external protocol integrations.
-- The vault tracks active strategy balances on-chain for cheaper withdrawal routing, keeps a configurable unwind queue, and exposes `syncStrategyAssets(...)` so an owner or automation can reconcile yield growth or losses into vault accounting.
-- The default Hardhat compile profile now enables the Solidity optimizer for production-like bytecode by default.
-- `YieldPilotVaultUpgradeMock` exists only to prove the upgrade path and storage continuity in tests and local development.
+- One vault instance should manage one asset only.
+- Do not whitelist a strategy adapter until its accounting and withdrawal semantics have been reviewed.
+- Do not use the default local deployer account model for production governance.
+- Treat upgrades as governance actions with review, simulation, and signoff.
+- Treat `syncStrategyAssets(...)` as an operator action that should be monitored and logged.
+
+## References
+
+- [Hardhat Ignition upgradeable proxy guide](https://hardhat.org/ignition/docs/guides/upgradeable-proxies)
+- [OpenZeppelin ERC-4626 documentation](https://docs.openzeppelin.com/contracts/5.x/erc4626)

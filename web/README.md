@@ -1,30 +1,35 @@
 # YieldPilot Web
 
-Next.js frontend for YieldPilot's shared-vault deposit, receive, dashboard, and withdrawal flows.
+Next.js frontend for the YieldPilot product experience. This app presents vault-related views such as dashboard, activity, recommendation, deposit-oriented flows, and withdrawals, while also wiring wallet connectivity and app-facing API routes.
 
 ## Stack
 
 - Next.js 16
 - React 19
 - TypeScript
-- shadcn/ui
 - Tailwind CSS v4
-- Reown AppKit + Wagmi + Viem
-- Recharts for lightweight chart surfaces
+- shadcn/ui and Radix primitives
+- Reown AppKit with Wagmi and Viem
+- Drizzle ORM
+- Recharts
 
-## Product surfaces
+## What The App Covers
 
-The frontend currently covers:
+Current product surfaces include:
 
-- deposit table with supported assets
-- deposit modal with asset selection and amount entry
-- receive modal with QR code and supported-chain details
-- dashboard overview for vault balance, deployed capital, and allocation activity
-- withdraw flow focused on amount, available-now liquidity, and unwind expectations
+- dashboard views for vault balances and opportunity summaries
+- withdrawal flow focused on amount, available liquidity, and expected unwind behavior
+- recommendation and policy pages
+- activity views
+- wallet connection and chain-aware UX
+- Robinhood Chain testnet wallet support for RWA-oriented product positioning
+- API routes for assets, protocols, opportunities, and recommendations
 
-## Wallet integration
+This frontend is product-facing. It does not currently execute the full onchain vault lifecycle by itself without the surrounding backend or operator logic.
 
-Wallet connection is handled with Reown AppKit.
+## Wallet Setup
+
+Wallet connectivity is handled with Reown AppKit.
 
 Required environment variable:
 
@@ -32,17 +37,11 @@ Required environment variable:
 NEXT_PUBLIC_REOWN_PROJECT_ID=your_project_id
 ```
 
-An example file is included at:
+Example env file:
+
 - [web/.env.example](C:\Users\hp\Desktop\arbs-london\web\.env.example)
 
-## Supported chains
-
-The current frontend is Arbitrum-first:
-
-- Arbitrum One
-- Arbitrum Sepolia
-
-## Run locally
+## Local Development
 
 Install dependencies:
 
@@ -56,32 +55,73 @@ Start the development server:
 bun run dev
 ```
 
-Build:
+Build for production:
 
 ```bash
 bun run build
 ```
 
-## Structure
+Run the production server locally:
+
+```bash
+bun run start
+```
+
+## Environment
+
+At minimum, local wallet flows require the Reown project ID.
+
+Depending on which API-backed or database-backed paths you use, you may also need additional environment variables for:
+
+- RPC access
+- database connectivity
+- third-party data sources
+
+If you expand the app beyond the current prototype state, document those variables in `.env.example` and keep this README in sync.
+
+## App Structure
 
 ```text
 web/
-  app/          App Router pages and layouts
-  components/   product components and shadcn/ui wrappers
-  hooks/        reusable frontend hooks
-  lib/          wallet config, app state, helpers
+  app/                  App Router pages, layouts, and API routes
+  components/           product components and UI primitives
+  components/providers/ wallet and app-level providers
+  drizzle/              schema definitions
+  hooks/                reusable client hooks
+  lib/                  config, helpers, wallet setup, data access
+  lib/server/           server-side data helpers
 ```
 
-## UX direction
+## Supported Networks
 
-The UI is intentionally restrained and dark, with an Aave-inspired tone:
+The app is currently Arbitrum-first, with Robinhood Chain testnet support added at the wallet layer:
 
-- smaller control density
-- minimal copy
-- compact action modals
-- clear hierarchy over feature bloat
+- Arbitrum One
+- Arbitrum Sepolia
+- Robinhood Chain Testnet
 
-## Notes
+Important nuance:
 
-- Recommendation selection has been intentionally folded back into the deposit journey instead of living as a separate route.
-- Supported-chain and receive flows are tailored for the shared vault model rather than a generic wallet UI.
+- live asset, protocol, opportunity, and recommendation APIs are still centered on Arbitrum market data
+- Robinhood Chain support currently improves wallet/network readiness and the product story around tokenized assets and RWAs
+- Robinhood-specific market ingestion can be layered in later as that ecosystem and its data surfaces mature
+
+## UX Notes
+
+The current interface is designed around a vault product rather than a generic wallet:
+
+- users are oriented around a shared vault position
+- withdrawal messaging focuses on idle liquidity versus unwind requirements
+- recommendation data is folded into the product flow rather than isolated as a separate research surface
+- supported networks now reflect both current Arbitrum execution paths and a Robinhood Chain expansion path for tokenized assets
+
+## Limitations
+
+- some screens are still presentation-first rather than production-integrated
+- frontend routes may rely on placeholder or app-defined data models while backend integrations evolve
+- wallet UX is present, but operator workflows and full transaction orchestration will need additional integration work
+
+## Related Docs
+
+- [root README](C:\Users\hp\Desktop\arbs-london\README.md)
+- [contracts README](C:\Users\hp\Desktop\arbs-london\contracts\README.md)

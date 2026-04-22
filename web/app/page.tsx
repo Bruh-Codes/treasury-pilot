@@ -1126,9 +1126,14 @@ export default function DepositPage() {
 									<CompactDepositRow
 										label="Network"
 										right={
-											<span className="text-sm font-semibold text-foreground">
-												{PRIMARY_CHAIN_LABEL}
-											</span>
+											<div className="text-right">
+												<div className="text-sm font-semibold text-foreground">
+													{PRIMARY_CHAIN_LABEL}
+												</div>
+												<div className="text-[11px] text-muted-foreground">
+													Robinhood Chain ready
+												</div>
+											</div>
 										}
 									/>
 									<CompactDepositRow
@@ -1250,7 +1255,7 @@ export default function DepositPage() {
 										className="flex items-center justify-between gap-3"
 									>
 										<div className="flex items-center gap-3">
-											<ArbitrumIcon />
+											<SupportedChainIcon kind={chain.icon} />
 											<div>
 												<div className="text-[16px] font-semibold text-foreground">
 													{chain.name}
@@ -1527,6 +1532,24 @@ function ArbitrumIcon() {
 			</svg>
 		</div>
 	);
+}
+
+function RobinhoodChainIcon() {
+	return (
+		<div className="flex size-10 items-center justify-center rounded-full border border-border/60 bg-background">
+			<div className="flex size-5 items-center justify-center rounded-full bg-[#C8FF5A] text-[10px] font-bold text-black">
+				RH
+			</div>
+		</div>
+	);
+}
+
+function SupportedChainIcon({ kind }: { kind: "arbitrum" | "robinhood" }) {
+	if (kind === "robinhood") {
+		return <RobinhoodChainIcon />;
+	}
+
+	return <ArbitrumIcon />;
 }
 
 function LegendChip({ color, label }: { color: string; label: string }) {

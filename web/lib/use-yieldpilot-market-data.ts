@@ -47,10 +47,17 @@ export function useProtocols(asset?: string) {
   });
 }
 
-export function useOpportunities(asset?: string) {
-  const suffix = asset ? `?asset=${encodeURIComponent(asset)}` : "";
+export function useOpportunities(asset?: string, protocol?: string) {
+  const searchParams = new URLSearchParams();
+  if (asset) {
+    searchParams.set("asset", asset);
+  }
+  if (protocol) {
+    searchParams.set("protocol", protocol);
+  }
+  const suffix = searchParams.toString() ? `?${searchParams.toString()}` : "";
   return useQuery({
-    queryKey: ["yieldpilot", "opportunities", asset ?? "all"],
+    queryKey: ["yieldpilot", "opportunities", asset ?? "all", protocol ?? "all"],
     queryFn: () =>
       fetchJson<{ opportunities: Opportunity[]; generatedAt: string }>(
         `/api/opportunities${suffix}`,

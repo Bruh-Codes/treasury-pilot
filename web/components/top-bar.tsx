@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeftRight, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { useAppKit, useAppKitAccount } from "@reown/appkit/react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -26,15 +26,6 @@ export function TopBar() {
 			</div>
 
 			<div className="ml-auto flex items-center gap-2.5">
-				<Button
-					variant="secondary"
-					size="lg"
-					className="h-10 rounded-full px-4 text-sm"
-				>
-					<ArrowLeftRight data-icon="inline-start" />
-					Swap
-				</Button>
-
 				{address ? (
 					<Button
 						variant="secondary"

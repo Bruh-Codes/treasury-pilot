@@ -9,7 +9,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
 import {ERC4626Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC4626Upgradeable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Ownable2StepUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
 
 import {IStrategyAdapter} from "./interfaces/IStrategyAdapter.sol";
 import {YieldPilotVaultStrategyManager} from "./YieldPilotVaultStrategyManager.sol";
@@ -24,7 +24,7 @@ contract YieldPilotVault is
     Initializable,
     ERC20Upgradeable,
     ERC4626Upgradeable,
-    OwnableUpgradeable,
+    Ownable2StepUpgradeable,
     ReentrancyGuard,
     PausableUpgradeable,
     YieldPilotVaultStrategyManager
@@ -37,6 +37,15 @@ contract YieldPilotVault is
     uint256 private constant _NOT_ENTERED = 1;
 
     error InsufficientLiquidity(uint256 requestedAssets, uint256 availableAssets);
+    error StrategyLossRequiresPause(address strategy, uint256 previousAssets, uint256 currentAssets);
+    error UnexpectedAssetDelta(uint256 expectedAssets, uint256 actualAssets);
+    error UnexpectedStrategyReportedAssets(address strategy, uint256 expectedAssets, uint256 actualAssets);
+    error OwnershipRenounceDisabled();
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
 
     /// @notice Initializes the vault implementation behind a transparent proxy.
     /// @param asset_ ERC-20 asset accepted by the vault.
@@ -47,6 +56,7 @@ contract YieldPilotVault is
         __ERC20_init(name_, symbol_);
         __ERC4626_init(IERC20(asset_));
         __Ownable_init(owner_);
+        __Ownable2Step_init();
         __Pausable_init();
         StorageSlot.getUint256Slot(_REENTRANCY_GUARD_STORAGE).value = _NOT_ENTERED;
     }
@@ -124,16 +134,19 @@ contract YieldPilotVault is
         }
 
         IERC20 assetToken = IERC20(asset());
-        _increaseStrategyAssets(strategy, assets);
+        uint256 strategyBalanceBefore = assetToken.balanceOf(strategy);
         assetToken.safeTransfer(strategy, assets);
-        deployedAssets = IStrategyAdapter(strategy).deposit(assets);
-
-        if (deployedAssets > assets) {
-            _increaseStrategyAssets(strategy, deployedAssets - assets);
-        } else if (deployedAssets < assets) {
-            _decreaseStrategyAssets(strategy, assets - deployedAssets);
+        uint256 transferredAssets = assetToken.balanceOf(strategy) - strategyBalanceBefore;
+        if (transferredAssets != assets) {
+            revert UnexpectedAssetDelta(assets, transferredAssets);
         }
 
+        deployedAssets = IStrategyAdapter(strategy).deposit(transferredAssets);
+        if (deployedAssets != transferredAssets) {
+            revert UnexpectedStrategyReportedAssets(strategy, transferredAssets, deployedAssets);
+        }
+
+        _increaseStrategyAssets(strategy, deployedAssets);
         emit StrategyAllocated(strategy, deployedAssets);
     }
 
@@ -146,9 +159,15 @@ contract YieldPilotVault is
             revert StrategyNotWhitelisted(strategy);
         }
 
-        recalledAssets = IStrategyAdapter(strategy).withdrawTo(address(this), assets);
-        _decreaseStrategyAssets(strategy, recalledAssets);
+        IERC20 assetToken = IERC20(asset());
+        uint256 vaultBalanceBefore = assetToken.balanceOf(address(this));
+        uint256 reportedAssets = IStrategyAdapter(strategy).withdrawTo(address(this), assets);
+        recalledAssets = assetToken.balanceOf(address(this)) - vaultBalanceBefore;
+        if (recalledAssets != reportedAssets) {
+            revert UnexpectedStrategyReportedAssets(strategy, recalledAssets, reportedAssets);
+        }
 
+        _decreaseStrategyAssets(strategy, recalledAssets);
         emit StrategyRecalled(strategy, recalledAssets);
     }
 
@@ -162,6 +181,9 @@ contract YieldPilotVault is
 
         uint256 previousAssets = strategyAssets[strategy];
         currentAssets = IStrategyAdapter(strategy).totalAssets();
+        if (currentAssets < previousAssets && !paused()) {
+            revert StrategyLossRequiresPause(strategy, previousAssets, currentAssets);
+        }
 
         strategyAssets[strategy] = currentAssets;
 
@@ -222,6 +244,11 @@ contract YieldPilotVault is
         return super.redeem(shares, receiver, owner);
     }
 
+    /// @notice Disables ownership renounce to avoid permanently orphaning strategy and pause controls.
+    function renounceOwnership() public pure override {
+        revert OwnershipRenounceDisabled();
+    }
+
     /// @dev Ensures enough liquidity is present before the ERC-4626 withdrawal settles.
     function _withdraw(
         address caller,
@@ -232,6 +259,20 @@ contract YieldPilotVault is
     ) internal override {
         _ensureLiquidity(assets);
         super._withdraw(caller, receiver, owner, assets, shares);
+    }
+
+    /// @dev Performs the ERC-4626 deposit flow while rejecting short-receipt tokens.
+    function _deposit(address caller, address receiver, uint256 assets, uint256 shares) internal override {
+        IERC20 assetToken = IERC20(asset());
+        uint256 balanceBefore = assetToken.balanceOf(address(this));
+        assetToken.safeTransferFrom(caller, address(this), assets);
+        uint256 receivedAssets = assetToken.balanceOf(address(this)) - balanceBefore;
+        if (receivedAssets != assets) {
+            revert UnexpectedAssetDelta(assets, receivedAssets);
+        }
+
+        _mint(receiver, shares);
+        emit Deposit(caller, receiver, assets, shares);
     }
 
     /// @dev Pulls funds back from strategies until the requested withdrawal can settle.
@@ -256,7 +297,13 @@ contract YieldPilotVault is
             }
 
             uint256 recallAmount = strategyBalance < remaining ? strategyBalance : remaining;
-            uint256 recalledAssets = IStrategyAdapter(strategy).withdrawTo(address(this), recallAmount);
+            uint256 vaultBalanceBefore = IERC20(asset()).balanceOf(address(this));
+            uint256 reportedAssets = IStrategyAdapter(strategy).withdrawTo(address(this), recallAmount);
+            uint256 recalledAssets = IERC20(asset()).balanceOf(address(this)) - vaultBalanceBefore;
+            if (recalledAssets != reportedAssets) {
+                revert UnexpectedStrategyReportedAssets(strategy, recalledAssets, reportedAssets);
+            }
+
             _decreaseStrategyAssets(strategy, recalledAssets);
 
             emit StrategyRecalled(strategy, recalledAssets);

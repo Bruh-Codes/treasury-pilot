@@ -3,93 +3,53 @@
 import Link from "next/link";
 import { Card, CardHead, PageHeader } from "@/components/page-primitives";
 import { Button } from "@/components/ui/button";
-import { formatUsd } from "@/lib/yieldpilot-data";
-import { useAssetSummaries, useOpportunities } from "@/lib/use-yieldpilot-market-data";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Wallet } from "lucide-react";
 
 function WithdrawPage() {
-	const assetQuery = useAssetSummaries();
-	const opportunityQuery = useOpportunities("USDC");
-
-	const usdcSummary = assetQuery.data?.assets.find((asset) => asset.symbol === "USDC");
-	const opportunities = opportunityQuery.data?.opportunities ?? [];
-	const instantLiquidity = opportunities
-		.filter((opportunity) => opportunity.liquidityLabel === "Instant")
-		.reduce((sum, opportunity) => sum + opportunity.tvlUsd, 0);
-
 	return (
 		<div className="px-6 py-8 md:px-10 md:py-10">
 			<PageHeader
 				eyebrow="Withdraw"
-				title="Withdrawal routing"
-				description="This page now reflects live market liquidity only. Local placeholder withdrawal flows have been removed."
+				title="Withdraw"
+				description="Withdrawals will appear here once your live vault balance and queue status are connected."
 			/>
 
 			<div className="mt-10 grid gap-6 lg:grid-cols-[1fr_360px]">
-				<div className="space-y-6">
-					<Card>
-						<CardHead title="Live liquidity snapshot" />
-						<div className="space-y-4 text-sm">
-							<RowK
-								k="USDC market liquidity"
-								v={formatUsd(usdcSummary?.availableLiquidityUsd ?? 0)}
-							/>
-							<RowK
-								k="Instant-liquidity venues"
-								v={String(
-									opportunities.filter(
-										(opportunity) => opportunity.liquidityLabel === "Instant",
-									).length,
-								)}
-							/>
-							<RowK k="Instant-liquidity TVL" v={formatUsd(instantLiquidity)} />
+				<Card>
+					<CardHead title="Withdrawals coming soon" />
+					<div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-12 text-center">
+						<div className="mb-5 flex size-12 items-center justify-center rounded-full border border-border bg-background">
+							<Wallet className="size-5 text-muted-foreground" />
 						</div>
-					</Card>
-
-					<Card>
-						<CardHead title="What comes next" />
-						<div className="space-y-3 text-sm text-muted-foreground">
-							<p>
-								To support real withdrawals, this page needs a live vault
-								balance, your wallet position, and contract-driven unwind status.
-							</p>
-							<p>
-								Those should come from the deployed vault plus indexed strategy
-								queue state, not local placeholder storage.
-							</p>
-						</div>
-					</Card>
-				</div>
+						<h2 className="text-xl font-semibold text-foreground">
+							No live withdrawal data yet
+						</h2>
+						<p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
+							This page will show your available withdrawal amount, any queued
+							withdrawals, and vault settlement progress after the frontend is
+							connected to the deployed vault contract.
+						</p>
+					</div>
+				</Card>
 
 				<aside className="space-y-6">
 					<Card>
-						<CardHead title="Execution status" />
-						<div className="space-y-3 text-sm">
-							<RowK k="UI mode" v="Live data only" />
-							<RowK k="User balance" v="Not wired" />
-							<RowK k="Withdraw execution" v="Pending contract integration" bold />
+						<CardHead title="What will show here" />
+						<div className="space-y-3 text-sm text-muted-foreground">
+							<p>Your withdrawable vault balance.</p>
+							<p>Any pending withdrawal queue or settlement status.</p>
+							<p>Confirmation once assets are returned to your wallet.</p>
 						</div>
 					</Card>
 
 					<Button className="w-full" size="lg" asChild>
 						<Link href="/dashboard">
-							View protocol dashboard
+							View live markets
 							<ArrowRight className="ml-1 h-4 w-4" />
 						</Link>
 					</Button>
 				</aside>
 			</div>
-		</div>
-	);
-}
-
-function RowK({ k, v, bold }: { k: string; v: string; bold?: boolean }) {
-	return (
-		<div className="flex items-center justify-between">
-			<span className={bold ? "font-medium" : "text-muted-foreground"}>{k}</span>
-			<span className={`font-mono tabular-nums ${bold ? "font-medium" : ""}`}>
-				{v}
-			</span>
 		</div>
 	);
 }

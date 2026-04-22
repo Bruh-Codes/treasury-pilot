@@ -10,7 +10,7 @@ import YieldPilotVaultModule from "../ignition/modules/YieldPilotVaultProxy.js";
 describe("YieldPilotVault", async function () {
   const connection = await network.create();
   const { viem, ignition } = connection;
-  const [owner, alice] = await viem.getWalletClients();
+  const [owner, alice, bob] = await viem.getWalletClients();
 
   it("deploys through an Ignition transparent proxy and unwinds strategy liquidity on withdraw", async function () {
     const asset = await viem.deployContract("MockERC20", ["Mock USD Coin", "mUSDC", 6]);
@@ -122,6 +122,48 @@ describe("YieldPilotVault", async function () {
     await vault.write.withdraw([parseUnits("500", 6), alice.account.address, alice.account.address], {
       account: alice.account,
     });
+  });
+
+  it("requires pausing before syncing realized strategy losses", async function () {
+    const asset = await viem.deployContract("MockERC20", ["Mock USD Coin", "mUSDC", 6]);
+    const depositAmount = parseUnits("5000", 6);
+
+    await asset.write.mint([alice.account.address, depositAmount]);
+
+    const { vault } = await ignition.deploy(YieldPilotVaultModule, {
+      deploymentId: "vault-loss-sync-guard",
+      parameters: {
+        YieldPilotVaultProxyModule: {
+          asset: asset.address,
+          name: "YieldPilot USDC Vault",
+          symbol: "ypUSDC",
+        },
+      },
+    });
+
+    const strategy = await viem.deployContract("MockStrategyAdapter", [asset.address]);
+    await strategy.write.setVault([vault.address]);
+    await vault.write.whitelistStrategy([strategy.address]);
+
+    await asset.write.approve([vault.address, depositAmount], {
+      account: alice.account,
+    });
+    await vault.write.deposit([depositAmount, alice.account.address], {
+      account: alice.account,
+    });
+    await vault.write.deployToStrategy([strategy.address, parseUnits("3000", 6)]);
+
+    await strategy.write.sweepLoss([owner.account.address, parseUnits("500", 6)]);
+
+    await assert.rejects(
+      vault.write.syncStrategyAssets([strategy.address]),
+    );
+
+    await vault.write.pause();
+    await vault.write.syncStrategyAssets([strategy.address]);
+
+    assert.equal(await vault.read.totalStrategyAssets(), parseUnits("2500", 6));
+    assert.equal(await vault.read.totalAssets(), parseUnits("4500", 6));
   });
 
   it("uses the configured withdrawal queue order during unwind", async function () {
@@ -307,5 +349,150 @@ describe("YieldPilotVault", async function () {
 
     assert.equal(await upgradedVault.read.version(), "2.0.0-test");
     assert.equal(await upgradedVault.read.reserveTargetBps(), 1_500);
+  });
+
+  it("locks the implementation initializer", async function () {
+    const implementation = await viem.deployContract("YieldPilotVault");
+    const asset = await viem.deployContract("MockERC20", ["Mock USD Coin", "mUSDC", 6]);
+
+    await assert.rejects(
+      implementation.write.initialize([asset.address, "YieldPilot USDC Vault", "ypUSDC", owner.account.address]),
+    );
+  });
+
+  it("rejects fee-on-transfer assets during deposit accounting", async function () {
+    const asset = await viem.deployContract("FeeOnTransferERC20", ["Fee USD Coin", "fUSDC", 6, 100]);
+    const depositAmount = parseUnits("1000", 6);
+
+    await asset.write.mint([alice.account.address, depositAmount]);
+
+    const { vault } = await ignition.deploy(YieldPilotVaultModule, {
+      deploymentId: "vault-fee-on-transfer-asset",
+      parameters: {
+        YieldPilotVaultProxyModule: {
+          asset: asset.address,
+          name: "YieldPilot Fee Vault",
+          symbol: "ypFEE",
+        },
+      },
+    });
+
+    await asset.write.approve([vault.address, depositAmount], {
+      account: alice.account,
+    });
+
+    await assert.rejects(
+      vault.write.deposit([depositAmount, alice.account.address], {
+        account: alice.account,
+      }),
+    );
+  });
+
+  it("rejects strategies that misreport deployed assets", async function () {
+    const asset = await viem.deployContract("MockERC20", ["Mock USD Coin", "mUSDC", 6]);
+    const depositAmount = parseUnits("5000", 6);
+
+    await asset.write.mint([alice.account.address, depositAmount]);
+
+    const { vault } = await ignition.deploy(YieldPilotVaultModule, {
+      deploymentId: "vault-misreporting-deploy-strategy",
+      parameters: {
+        YieldPilotVaultProxyModule: {
+          asset: asset.address,
+          name: "YieldPilot USDC Vault",
+          symbol: "ypUSDC",
+        },
+      },
+    });
+
+    const strategy = await viem.deployContract("MisreportingStrategyAdapter", [asset.address]);
+    await strategy.write.setVault([vault.address]);
+    await strategy.write.setOffsets([1n, 0n]);
+    await vault.write.whitelistStrategy([strategy.address]);
+
+    await asset.write.approve([vault.address, depositAmount], {
+      account: alice.account,
+    });
+    await vault.write.deposit([depositAmount, alice.account.address], {
+      account: alice.account,
+    });
+
+    await assert.rejects(
+      vault.write.deployToStrategy([strategy.address, parseUnits("1000", 6)]),
+    );
+  });
+
+  it("rejects strategies that misreport recalled assets", async function () {
+    const asset = await viem.deployContract("MockERC20", ["Mock USD Coin", "mUSDC", 6]);
+    const depositAmount = parseUnits("5000", 6);
+
+    await asset.write.mint([alice.account.address, depositAmount]);
+
+    const { vault } = await ignition.deploy(YieldPilotVaultModule, {
+      deploymentId: "vault-misreporting-withdraw-strategy",
+      parameters: {
+        YieldPilotVaultProxyModule: {
+          asset: asset.address,
+          name: "YieldPilot USDC Vault",
+          symbol: "ypUSDC",
+        },
+      },
+    });
+
+    const strategy = await viem.deployContract("MisreportingStrategyAdapter", [asset.address]);
+    await strategy.write.setVault([vault.address]);
+    await vault.write.whitelistStrategy([strategy.address]);
+
+    await asset.write.approve([vault.address, depositAmount], {
+      account: alice.account,
+    });
+    await vault.write.deposit([depositAmount, alice.account.address], {
+      account: alice.account,
+    });
+    await vault.write.deployToStrategy([strategy.address, parseUnits("3000", 6)]);
+
+    await strategy.write.setOffsets([0n, 1n]);
+
+    await assert.rejects(
+      vault.write.recallFromStrategy([strategy.address, parseUnits("1000", 6)]),
+    );
+  });
+
+  it("uses two-step ownership transfers and blocks renouncing ownership", async function () {
+    const asset = await viem.deployContract("MockERC20", ["Mock USD Coin", "mUSDC", 6]);
+
+    const { vault } = await ignition.deploy(YieldPilotVaultModule, {
+      deploymentId: "vault-two-step-ownership",
+      parameters: {
+        YieldPilotVaultProxyModule: {
+          asset: asset.address,
+          name: "YieldPilot USDC Vault",
+          symbol: "ypUSDC",
+        },
+      },
+    });
+
+    await vault.write.transferOwnership([bob.account.address]);
+    assert.equal((await vault.read.pendingOwner()).toLowerCase(), bob.account.address.toLowerCase());
+    assert.equal((await vault.read.owner()).toLowerCase(), owner.account.address.toLowerCase());
+
+    await assert.rejects(
+      vault.write.acceptOwnership({
+        account: alice.account,
+      }),
+    );
+
+    await vault.write.acceptOwnership({
+      account: bob.account,
+    });
+
+    assert.equal((await vault.read.owner()).toLowerCase(), bob.account.address.toLowerCase());
+    assert.equal(await vault.read.pendingOwner(), "0x0000000000000000000000000000000000000000");
+
+    await assert.rejects(
+      vault.write.renounceOwnership({
+        account: bob.account,
+      }),
+    );
   });
 });

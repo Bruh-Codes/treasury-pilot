@@ -22,6 +22,7 @@ contract MockStrategyAdapter is IStrategyAdapter, Ownable {
     event VaultSet(address indexed vault);
     event Deposited(address indexed vault, uint256 assets);
     event Withdrawn(address indexed vault, address indexed receiver, uint256 assets);
+    event LossSwept(address indexed recipient, uint256 assets);
 
     /// @param asset_ ERC-20 asset managed by this mock adapter.
     constructor(address asset_) Ownable(msg.sender) {
@@ -68,5 +69,11 @@ contract MockStrategyAdapter is IStrategyAdapter, Ownable {
         withdrawnAssets = assets;
         _assetToken.safeTransfer(receiver, assets);
         emit Withdrawn(msg.sender, receiver, assets);
+    }
+
+    /// @notice Test helper to simulate a strategy loss by removing assets from the adapter.
+    function sweepLoss(address recipient, uint256 assets) external onlyOwner {
+        _assetToken.safeTransfer(recipient, assets);
+        emit LossSwept(recipient, assets);
     }
 }

@@ -1,65 +1,63 @@
 # YieldPilot
 
-YieldPilot is an Arbitrum-focused DeFi product that lets users deposit supported assets into a shared vault, receive AI-assisted allocation recommendations across approved protocols, and withdraw through a vault-managed unwind flow instead of handling protocol exits manually.
+YieldPilot is a shared-vault DeFi product focused on making onchain yield allocation easier to use. Users deposit a supported asset into a vault, receive ERC-4626 vault shares as their receipt, and rely on the vault to handle strategy deployment and withdrawal unwinds behind the scenes.
 
-This repository is split into two workspaces:
+The product is Arbitrum-first today, with frontend wallet support expanded to include Robinhood Chain testnet so the app can speak credibly to tokenized asset and RWA workflows as that ecosystem opens up.
 
-- [web](C:\Users\hp\Desktop\arbs-london\web): the Next.js frontend
-- [contracts](C:\Users\hp\Desktop\arbs-london\contracts): the Hardhat + OpenZeppelin smart contracts
+This repository contains two workspaces:
 
-## Product overview
+- [contracts](C:\Users\hp\Desktop\arbs-london\contracts): Hardhat 3 smart contracts, proxy deployment modules, and tests
+- [web](C:\Users\hp\Desktop\arbs-london\web): Next.js frontend, wallet integration, and app-facing API routes
 
-YieldPilot is designed around a simple user story:
+## Product Model
 
-1. connect a wallet
-2. deposit a supported asset into the shared vault
-3. review approved deployment options surfaced by the product
-4. let the vault manage allocations and withdrawals on the user's behalf
+YieldPilot is built around one vault per supported asset.
 
-The UX is intentionally minimal and Aave-inspired:
+At a high level:
 
-- compact product shell
-- simple deposit and receive flows
-- recommendation logic folded into the deposit journey
-- withdrawal screens focused on what is available now versus what needs unwind time
+1. a user deposits an ERC-20 asset into the vault
+2. the vault mints ERC-4626 shares to the user
+3. the vault operator can deploy idle liquidity into approved strategy adapters
+4. users withdraw by redeeming shares for underlying assets
+5. if idle liquidity is insufficient, the vault recalls liquidity from strategies using a configured withdrawal queue
 
-## Repository layout
+The user does not have to exit protocols one by one. Their position is represented by vault shares, while the vault manages the underlying routing.
+
+## Repository Layout
 
 ```text
 arbs-london/
-  contracts/   Hardhat 3, Ignition, OpenZeppelin, viem
-  web/         Next.js 16, React 19, shadcn/ui, Reown
+  contracts/   Vault contracts, mocks, Ignition modules, tests
+  web/         Next.js app, UI components, API routes, wallet setup
 ```
 
-## Smart contracts
+## Contracts Summary
 
-The contracts workspace contains the shared vault and proxy deployment system:
+The contracts workspace currently includes:
 
-- transparent upgradeable proxy architecture
-- OpenZeppelin-based implementation contracts
-- ERC-4626 shared vault with owner-managed strategy deployment
-- owner-managed withdrawal queue for predictable unwind ordering
-- explicit reentrancy protection around vault entrypoints and strategy callbacks
-- a test-only upgrade mock used to verify proxy upgrades safely
-- Hardhat Ignition deployment modules
-- tests for deposit, allocation, withdrawal unwind, and upgradeability
+- an upgradeable ERC-4626 vault
+- owner-managed strategy whitelisting and deployment
+- explicit withdrawal queue management for unwind order
+- proxy deployment through Hardhat Ignition and OpenZeppelin transparent proxies
+- reentrancy protections on vault entrypoints and strategy callbacks
+- hardening against fee-on-transfer assets and adapter misreporting on deploy/recall flows
+- tests covering deposits, withdrawals, upgrades, strategy accounting, and admin controls
 
-See:
-- [contracts/README.md](C:\Users\hp\Desktop\arbs-london\contracts\README.md)
+See [contracts/README.md](C:\Users\hp\Desktop\arbs-london\contracts\README.md) for contract architecture and deployment details.
 
-## Frontend
+## Web Summary
 
-The frontend workspace contains:
+The frontend workspace currently includes:
 
-- deposit, receive, dashboard, and withdraw flows
-- Reown wallet connect integration
-- shadcn/ui primitives
-- Arbitrum-focused network metadata and wallet UX
+- landing and product navigation
+- dashboard, activity, recommendation, and withdraw views
+- wallet connection through Reown AppKit
+- Arbitrum-focused market data plus Robinhood Chain testnet wallet support
+- app routes and API routes for asset, protocol, and recommendation data
 
-See:
-- [web/README.md](C:\Users\hp\Desktop\arbs-london\web\README.md)
+See [web/README.md](C:\Users\hp\Desktop\arbs-london\web\README.md) for frontend setup details.
 
-## Local development
+## Local Development
 
 ### Contracts
 
@@ -70,7 +68,7 @@ npx hardhat compile
 npx hardhat test
 ```
 
-### Frontend
+### Web
 
 ```bash
 cd web
@@ -78,22 +76,28 @@ bun install
 bun run dev
 ```
 
-## Core ideas
+## Current Security Posture
 
-- one shared vault per supported asset
-- idle liquidity kept in-vault to improve withdrawal responsiveness
-- whitelisted strategy destinations only
-- transparent upgradeability with OpenZeppelin
-- a user-facing experience that avoids exposing unnecessary protocol complexity
+The vault layer has explicit protections for several common failure modes:
 
-## Status
+- implementation initializer locking for the upgradeable contract
+- non-reentrant deposit, mint, withdraw, redeem, deploy, recall, and sync flows
+- rejection of short-receipt asset transfers during deposits and strategy deployment
+- rejection of adapters that misreport recalled or deployed asset amounts
+- two-step ownership transfers
+- disabled ownership renounce to avoid orphaning vault controls
+- pause required before syncing a realized strategy loss into vault accounting
 
-This repository now includes:
+This does not remove the need to review every production strategy adapter independently. Adapter code remains part of the trust boundary.
 
-- a working proxy-based vault system with upgrade coverage
-- strategy accounting and withdrawal-queue management split into dedicated contract modules
-- reentrancy regression coverage for strategy callback attacks during deploy and unwind flows
-- a polished frontend prototype for deposit, receive, dashboard, and withdrawal flows
-- wallet connection via Reown
+## What This Repo Is Good For
 
-It is structured to be presentable on GitHub and practical for continued hackathon iteration.
+This repository is a strong base for:
+
+- demonstrating the YieldPilot product model
+- iterating on ERC-4626 vault behavior
+- building operator workflows around strategy deployment and unwind management
+- connecting a frontend to a vault-driven yield product
+- positioning the product around both DeFi treasury management and emerging tokenized-asset / RWA rails
+
+It should still be treated as a project under active development rather than a finished production deployment package.

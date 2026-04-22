@@ -15,6 +15,7 @@ Users deposit USDC into a policy-controlled vault on Arbitrum, and an off-chain 
 - Fits the hackathon theme: capital, institutions, real-world adoption, Arbitrum-native infra
 - Strong agentic angle without unsafe "AI controls everything" messaging
 - Clear real-world use case: idle stablecoin treasury management
+- Robinhood Chain gives us a concrete tokenized-asset and RWA angle instead of leaving RWAs as a vague future claim
 - Easy demo story: deposit, get recommendations, approve allocation, track position, withdraw
 - Judges can quickly understand the value
 - Technical depth is visible in both smart contracts and product design
@@ -66,6 +67,7 @@ Simple story:
 
 - User connects wallet
 - Network is Arbitrum Sepolia for demo or Arbitrum if feasible
+- Robinhood Chain testnet is also available in wallet UX to support the RWA expansion story
 
 ### 2. Create Vault Policy
 
@@ -555,7 +557,8 @@ This needs to feel polished and obvious.
 - notification system for changing yield/risk
 - institution/team vaults with multi-approver flow
 - RWA strategy integrations
-- Robinhood Chain support
+- [x] Robinhood Chain wallet support
+- [ ] Robinhood Chain market ingestion and protocol scoring
 - recommendation history and analytics
 
 ## Final Product Principle
@@ -576,3 +579,10 @@ That clarity is part of what will make this feel strong enough to win.
 - [ ] per-user policy enforcement onchain
 - [ ] live protocol adapters beyond mocks
 - [ ] gas benchmarking report for main user flows
+
+## Current Frontend / Product Progress
+
+- [x] Reown wallet support for Arbitrum One, Arbitrum Sepolia, and Robinhood Chain testnet
+- [x] product positioning now supports both DeFi treasury flows and a Robinhood Chain RWA expansion story
+- [ ] Robinhood-native market opportunities folded into live APIs
+- [ ] Robinhood Chain-specific recommendation logic once reliable market coverage exists
