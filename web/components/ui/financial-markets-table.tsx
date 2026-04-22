@@ -145,83 +145,95 @@ export function FinancialMarketsTable({
 							animate="visible"
 							variants={containerVariants}
 						>
-							{visibleRows.map((row, index) => {
-								const isSelected = selectedRow === row.id;
-								return (
-									<motion.div key={row.id} variants={rowVariants}>
-										<div
-											role="button"
-											tabIndex={0}
-											onClick={() => handleRowSelect(row.id)}
-											onKeyDown={(event) => {
-												if (event.key === "Enter" || event.key === " ") {
-													event.preventDefault();
-													handleRowSelect(row.id);
-												}
-											}}
-											className={cn(
-												"group/row relative cursor-pointer px-6 py-4 transition-all duration-200",
-												getRowTone(isSelected),
-												index < visibleRows.length - 1 &&
-													"border-b border-border/20",
-											)}
-											style={{
-												display: "grid",
-												gridTemplateColumns:
-													"240px minmax(92px,1fr) minmax(92px,1fr) minmax(72px,1fr) minmax(116px,1fr) minmax(120px,1fr) 74px",
-												columnGap: "10px",
-											}}
-										>
-											<div className="flex items-center gap-3">
-												<AssetAvatar row={row} />
-												<div className="min-w-0">
-													<div className="truncate font-medium text-foreground/95">
-														{row.name}
-													</div>
-													<div className="mt-1 text-xs text-muted-foreground/75">
-														{row.symbol}
+							{visibleRows.length === 0 ? (
+								<div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-16 text-center">
+									<div className="text-lg font-medium text-foreground">
+										No wallet assets found
+									</div>
+									<p className="mt-2 max-w-md text-sm text-muted-foreground">
+										Connect a wallet with supported assets on this chain to see
+										depositable balances here.
+									</p>
+								</div>
+							) : (
+								visibleRows.map((row, index) => {
+									const isSelected = selectedRow === row.id;
+									return (
+										<motion.div key={row.id} variants={rowVariants}>
+											<div
+												role="button"
+												tabIndex={0}
+												onClick={() => handleRowSelect(row.id)}
+												onKeyDown={(event) => {
+													if (event.key === "Enter" || event.key === " ") {
+														event.preventDefault();
+														handleRowSelect(row.id);
+													}
+												}}
+												className={cn(
+													"group/row relative cursor-pointer px-6 py-4 transition-all duration-200",
+													getRowTone(isSelected),
+													index < visibleRows.length - 1 &&
+														"border-b border-border/20",
+												)}
+												style={{
+													display: "grid",
+													gridTemplateColumns:
+														"240px minmax(92px,1fr) minmax(92px,1fr) minmax(72px,1fr) minmax(116px,1fr) minmax(120px,1fr) 74px",
+													columnGap: "10px",
+												}}
+											>
+												<div className="flex items-center gap-3">
+													<AssetAvatar row={row} />
+													<div className="min-w-0">
+														<div className="truncate font-medium text-foreground/95">
+															{row.name}
+														</div>
+														<div className="mt-1 text-xs text-muted-foreground/75">
+															{row.symbol}
+														</div>
 													</div>
 												</div>
-											</div>
 
-											<TableValue value={row.walletBalance} />
-											<TableValue value={row.deposited} />
-											<TableValue value={row.apy} strong />
-											<TableValue value={row.totalDeposits} />
-											<TableValue value={row.availableLiquidity} />
+												<TableValue value={row.walletBalance} />
+												<TableValue value={row.deposited} />
+												<TableValue value={row.apy} strong />
+												<TableValue value={row.totalDeposits} />
+												<TableValue value={row.availableLiquidity} />
 
-											<div className="flex items-center justify-end">
-												<DropdownMenu>
-													<DropdownMenuTrigger asChild>
-														<Button
-															variant="secondary"
-															size="icon-sm"
-															className="rounded-full"
+												<div className="flex items-center justify-end">
+													<DropdownMenu>
+														<DropdownMenuTrigger asChild>
+															<Button
+																variant="secondary"
+																size="icon-sm"
+																className="rounded-full"
+																onClick={(event) => event.stopPropagation()}
+																aria-label={`Open options for ${row.name}`}
+															>
+																<EllipsisVertical />
+															</Button>
+														</DropdownMenuTrigger>
+														<DropdownMenuContent
+															align="end"
+															className="min-w-36"
 															onClick={(event) => event.stopPropagation()}
-															aria-label={`Open options for ${row.name}`}
 														>
-															<EllipsisVertical />
-														</Button>
-													</DropdownMenuTrigger>
-													<DropdownMenuContent
-														align="end"
-														className="min-w-36"
-														onClick={(event) => event.stopPropagation()}
-													>
-														<DropdownMenuItem
-															onClick={() => onAction?.(row.id)}
-															className="gap-2"
-														>
-															<CircleArrowDown />
-															Deposit
-														</DropdownMenuItem>
-													</DropdownMenuContent>
-												</DropdownMenu>
+															<DropdownMenuItem
+																onClick={() => onAction?.(row.id)}
+																className="gap-2"
+															>
+																<CircleArrowDown />
+																Deposit
+															</DropdownMenuItem>
+														</DropdownMenuContent>
+													</DropdownMenu>
+												</div>
 											</div>
-										</div>
-									</motion.div>
-								);
-							})}
+										</motion.div>
+									);
+								})
+							)}
 						</motion.div>
 					</div>
 				</div>

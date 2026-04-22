@@ -2,12 +2,13 @@
 
 import { useMemo, useState } from "react";
 import { useAppKitAccount } from "@reown/appkit/react";
+import { useBalance, useChainId, useReadContracts } from "wagmi";
+import { erc20Abi, formatUnits, type Address } from "viem";
 import {
 	CircleArrowDown,
 	ChevronDown,
 	Copy,
 	Info,
-	LayoutList,
 	QrCode,
 	Search,
 	X,
@@ -40,6 +41,7 @@ import {
 	type FinancialAssetRow,
 } from "@/components/ui/financial-markets-table";
 import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
 	Tooltip,
 	TooltipContent,
@@ -68,6 +70,51 @@ type RangeKey = "1D" | "1W" | "1M" | "6M" | "1Y" | "All";
 
 const RANGE_OPTIONS: RangeKey[] = ["1D", "1W", "1M", "6M", "1Y", "All"];
 
+const TRACKED_TOKEN_CONFIG: Partial<
+	Record<
+		number,
+		Partial<Record<string, { address: Address; decimals: number; stable: boolean }>>
+	>
+> = {
+	42161: {
+		USDC: {
+			address: "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+			decimals: 6,
+			stable: true,
+		},
+		USDT: {
+			address: "0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9",
+			decimals: 6,
+			stable: true,
+		},
+		WETH: {
+			address: "0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+			decimals: 18,
+			stable: false,
+		},
+		WBTC: {
+			address: "0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f",
+			decimals: 8,
+			stable: false,
+		},
+		LINK: {
+			address: "0xf97f4df75117a78c1A5a0DBb814Af92458539FB4",
+			decimals: 18,
+			stable: false,
+		},
+		AAVE: {
+			address: "0xba5ddd1f9d7f570dc94a51479a000e3bce967196",
+			decimals: 18,
+			stable: false,
+		},
+		ARB: {
+			address: "0x912CE59144191C1204E64559FE8253a0e49E6548",
+			decimals: 18,
+			stable: false,
+		},
+	},
+};
+
 const ASSET_VISUALS: Record<string, { iconUrl?: string; iconClass: string }> = {
 	USDC: {
 		iconUrl:
@@ -80,6 +127,11 @@ const ASSET_VISUALS: Record<string, { iconUrl?: string; iconClass: string }> = {
 		iconClass: "from-emerald-400 to-teal-600",
 	},
 	ETH: {
+		iconUrl:
+			"https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/eth.png",
+		iconClass: "from-slate-500 to-slate-700",
+	},
+	WETH: {
 		iconUrl:
 			"https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/eth.png",
 		iconClass: "from-slate-500 to-slate-700",
@@ -127,6 +179,7 @@ function compactAmount(value: number) {
 export default function DepositPage() {
 	const assetSummaries = useAssetSummaries();
 	const { address } = useAppKitAccount();
+	const chainId = useChainId();
 	const [search, setSearch] = useState("");
 	const [noBalanceAsset, setNoBalanceAsset] = useState<AssetItem | null>(null);
 	const [depositAsset, setDepositAsset] = useState<AssetItem | null>(null);
@@ -136,16 +189,73 @@ export default function DepositPage() {
 	const [selectedRange, setSelectedRange] = useState<RangeKey>("1W");
 	const vaultAddress = "0x8F3A...C2E7";
 	const summaries = assetSummaries.data?.assets ?? [];
-	const totalMarketTvl = summaries.reduce(
-		(sum, asset) => sum + asset.totalTvlUsd,
-		0,
-	);
-	const supportedAssetCount = summaries.filter((asset) => asset.supported).length;
-	const averageAssetApy =
-		summaries.length > 0
-			? summaries.reduce((sum, asset) => sum + asset.averageApy, 0) /
-				summaries.length
-			: 0;
+	const nativeBalance = useBalance({
+		address: address as Address | undefined,
+		query: {
+			enabled: Boolean(address),
+		},
+	});
+	const trackedTokenContracts = useMemo(() => {
+		if (!address) return [];
+		const chainConfig = TRACKED_TOKEN_CONFIG[chainId] ?? {};
+		return summaries
+			.map((summary) => {
+				const token = chainConfig[summary.symbol];
+				if (!token) return null;
+				return {
+					symbol: summary.symbol,
+					decimals: token.decimals,
+					stable: token.stable,
+					contract: {
+						address: token.address,
+						abi: erc20Abi,
+						functionName: "balanceOf" as const,
+						args: [address as Address] as const,
+					},
+				};
+			})
+			.filter((item): item is NonNullable<typeof item> => item !== null);
+	}, [address, chainId, summaries]);
+	const tokenBalances = useReadContracts({
+		allowFailure: true,
+		contracts: trackedTokenContracts.map((item) => item.contract),
+		query: {
+			enabled: trackedTokenContracts.length > 0,
+		},
+	});
+	const isAssetSummariesLoading =
+		assetSummaries.isPending && assetSummaries.data === undefined;
+	const isNativeBalanceLoading =
+		Boolean(address) &&
+		nativeBalance.isPending &&
+		nativeBalance.data === undefined;
+	const isTokenBalancesLoading =
+		Boolean(address) &&
+		trackedTokenContracts.length > 0 &&
+		tokenBalances.isPending &&
+		tokenBalances.data === undefined;
+	const isPageLoading =
+		isAssetSummariesLoading || isNativeBalanceLoading || isTokenBalancesLoading;
+	const balanceBySymbol = useMemo(() => {
+		const next = new Map<string, { balance: number; stable: boolean }>();
+		if (nativeBalance.data?.value !== undefined) {
+			next.set("ETH", {
+				balance: Number(
+					formatUnits(nativeBalance.data.value, nativeBalance.data.decimals),
+				),
+				stable: false,
+			});
+		}
+		trackedTokenContracts.forEach((item, index) => {
+			const result = tokenBalances.data?.[index];
+			if (!result || result.status !== "success") return;
+			next.set(item.symbol, {
+				balance: Number(formatUnits(result.result, item.decimals)),
+				stable: item.stable,
+			});
+		});
+		return next;
+	}, [nativeBalance.data, tokenBalances.data, trackedTokenContracts]);
 
 	const assets = useMemo(() => {
 		if (summaries.length === 0) {
@@ -175,7 +285,7 @@ export default function DepositPage() {
 				name: summary.name,
 				symbol: summary.symbol,
 				iconUrl: summary.iconUrl ?? visuals.iconUrl,
-				walletBalance: 0,
+				walletBalance: balanceBySymbol.get(summary.symbol)?.balance ?? 0,
 				deposited: "-",
 				apy:
 					summary.protocolCount > 0
@@ -193,18 +303,34 @@ export default function DepositPage() {
 				iconClass: visuals.iconClass,
 			};
 		});
-	}, [assetSummaries.isLoading, summaries]);
+	}, [assetSummaries.isLoading, balanceBySymbol, summaries]);
+
+	const walletAssets = useMemo(
+		() =>
+			assets
+				.filter((asset) => asset.walletBalance > 0)
+				.sort((left, right) => right.walletBalance - left.walletBalance),
+		[assets],
+	);
+	const totalWalletStableBalance = useMemo(
+		() =>
+			Array.from(balanceBySymbol.values())
+				.filter((asset) => asset.stable)
+				.reduce((sum, asset) => sum + asset.balance, 0),
+		[balanceBySymbol],
+	);
+	const supportedWalletAssets = walletAssets.filter((asset) => asset.supported).length;
 
 	const filtered = useMemo(() => {
 		const term = search.trim().toLowerCase();
-		return assets.filter((asset) => {
+		return walletAssets.filter((asset) => {
 			const matchesSearch =
 				term.length === 0 ||
 				asset.name.toLowerCase().includes(term) ||
 				asset.symbol.toLowerCase().includes(term);
 			return matchesSearch;
 		});
-	}, [assets, search]);
+	}, [walletAssets, search]);
 
 	const rows: FinancialAssetRow[] = filtered.map((asset) => ({
 		id: asset.id,
@@ -243,7 +369,7 @@ export default function DepositPage() {
 	} satisfies ChartConfig;
 
 	const chartData = useMemo(() => {
-		const base = Math.max(totalMarketTvl || 0, 25000);
+		const base = totalWalletStableBalance;
 		const series: Record<
 			RangeKey,
 			Array<{
@@ -506,7 +632,7 @@ export default function DepositPage() {
 			],
 		};
 		return series[selectedRange];
-	}, [selectedRange, totalMarketTvl]);
+	}, [selectedRange, totalWalletStableBalance]);
 
 	function openDeposit(asset: AssetItem) {
 		setDepositAsset(asset);
@@ -532,7 +658,7 @@ export default function DepositPage() {
 	function confirmDeposit() {
 		if (!depositAsset) return;
 		const amount = Number(depositAmount) || 0;
-		if (amount <= 0) return;
+		if (amount <= 0 || amount > depositAsset.walletBalance) return;
 		if (!address) {
 			toast.error("Connect your wallet first");
 			return;
@@ -567,6 +693,10 @@ export default function DepositPage() {
 		})();
 	}
 
+	if (isPageLoading) {
+		return <DepositPageSkeleton />;
+	}
+
 	return (
 		<div className="px-0 pb-12">
 			<div className="px-5 pt-8 md:px-8">
@@ -582,14 +712,14 @@ export default function DepositPage() {
 							<div>
 								<div className="text-[36px] font-semibold tracking-tight text-foreground md:text-[44px]">
 									$
-									{totalMarketTvl.toLocaleString(undefined, {
+									{totalWalletStableBalance.toLocaleString(undefined, {
 										minimumFractionDigits: 2,
 										maximumFractionDigits: 2,
 									})}
 								</div>
 								<div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-									Live TVL
-									<MetricTooltip text="Total live TVL across the asset summaries currently returned from the Arbitrum market registry.">
+									Wallet stable balance
+									<MetricTooltip text="Approximate connected-wallet balance across tracked stable assets available to deposit.">
 										<Info className="size-3.5" />
 									</MetricTooltip>
 								</div>
@@ -598,24 +728,24 @@ export default function DepositPage() {
 							<div className="border-t border-border pt-4">
 								<div className="flex items-center justify-between py-2.5 text-sm">
 									<div className="flex items-center gap-1.5 text-muted-foreground">
-										Average APY
-										<MetricTooltip text="Average APY across the live asset registry rows shown below.">
+										Wallet assets
+										<MetricTooltip text="How many tracked assets with a non-zero balance were detected in the connected wallet on the current chain.">
 											<Info className="size-3.5" />
 										</MetricTooltip>
 									</div>
 									<span className="font-semibold text-foreground">
-										{averageAssetApy.toFixed(2)}%
+										{walletAssets.length}
 									</span>
 								</div>
 								<div className="flex items-center justify-between py-2.5 text-sm">
 									<div className="flex items-center gap-1.5 text-muted-foreground">
-										Supported assets
-										<MetricTooltip text="How many assets in the live registry are currently marked as supported for routing and recommendation flows.">
+										Deposit-ready
+										<MetricTooltip text="Wallet assets that are both detected in your wallet and supported by the live registry.">
 											<Info className="size-3.5" />
 										</MetricTooltip>
 									</div>
 									<span className="font-semibold text-foreground">
-										{supportedAssetCount}
+										{supportedWalletAssets}
 									</span>
 								</div>
 							</div>
@@ -634,7 +764,14 @@ export default function DepositPage() {
 								<Button
 									variant="secondary"
 									className="h-12 rounded-full px-4 text-sm font-semibold"
-									onClick={() => openDeposit(assets[0]!)}
+									onClick={() => {
+										const firstWalletAsset = walletAssets[0];
+										if (!firstWalletAsset) {
+											toast.error("No wallet assets detected on this chain");
+											return;
+										}
+										openDeposit(firstWalletAsset);
+									}}
 								>
 									<CircleArrowDown data-icon="inline-start" />
 									Deposit
@@ -647,11 +784,11 @@ export default function DepositPage() {
 										<div className="flex items-center justify-between gap-4">
 											<div>
 												<p className="text-sm font-medium text-muted-foreground">
-													Asset flows
+													Depositable assets
 												</p>
 												<p className="mt-1 text-xs text-muted-foreground/75">
-													Each deposited or received asset tracks as its own
-													line.
+													Wallet balances on the current chain, paired with
+													live Arbitrum APY and liquidity context.
 												</p>
 											</div>
 										</div>
@@ -775,10 +912,11 @@ export default function DepositPage() {
 							<div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
 								<div>
 									<CardTitle className="text-2xl font-semibold tracking-tight">
-										Market board
+										Wallet assets
 									</CardTitle>
 									<p className="mt-1 text-sm text-muted-foreground">
-										Arbitrum market data from the live protocol registry
+										Assets detected in the connected wallet, enriched with live
+										Arbitrum yield data
 									</p>
 								</div>
 							</div>
@@ -1162,6 +1300,156 @@ function MetricTooltip({
 				{text}
 			</TooltipContent>
 		</Tooltip>
+	);
+}
+
+function DepositPageSkeleton() {
+	return (
+		<div className="px-0 pb-12">
+			<div className="px-5 pt-8 md:px-8">
+				<div className="flex flex-col gap-8">
+					<div className="grid gap-6 xl:grid-cols-[340px_minmax(0,1fr)]">
+						<div className="flex flex-col gap-5">
+							<div>
+								<Skeleton className="h-10 w-64 rounded-xl" />
+							</div>
+
+							<div>
+								<Skeleton className="h-16 w-56 rounded-xl" />
+								<div className="mt-3 flex items-center gap-2">
+									<Skeleton className="h-5 w-32 rounded-full" />
+									<Skeleton className="h-4 w-4 rounded-full" />
+								</div>
+							</div>
+
+							<div className="border-t border-border pt-4">
+								<div className="flex items-center justify-between py-2.5">
+									<div className="flex items-center gap-2">
+										<Skeleton className="h-5 w-24 rounded-full" />
+										<Skeleton className="h-4 w-4 rounded-full" />
+									</div>
+									<Skeleton className="h-6 w-10 rounded-full" />
+								</div>
+								<div className="flex items-center justify-between py-2.5">
+									<div className="flex items-center gap-2">
+										<Skeleton className="h-5 w-24 rounded-full" />
+										<Skeleton className="h-4 w-4 rounded-full" />
+									</div>
+									<Skeleton className="h-6 w-10 rounded-full" />
+								</div>
+							</div>
+						</div>
+
+						<div className="flex flex-col gap-4">
+							<div className="flex flex-wrap items-center justify-end gap-3">
+								<Skeleton className="h-12 w-32 rounded-full" />
+								<Skeleton className="h-12 w-32 rounded-full" />
+							</div>
+
+							<Card className="rounded-[24px] border-border bg-card/95 p-0">
+								<CardContent className="p-0">
+									<div className="flex flex-col gap-3 px-4 py-4 md:px-5">
+										<div>
+											<Skeleton className="h-6 w-40 rounded-full" />
+											<Skeleton className="mt-2 h-4 w-72 rounded-full" />
+										</div>
+										<div className="flex items-center justify-end gap-2">
+											{Array.from({ length: 6 }).map((_, index) => (
+												<Skeleton
+													key={index}
+													className="h-8 w-10 rounded-full"
+												/>
+											))}
+										</div>
+									</div>
+									<div className="px-3 pb-3 md:px-4 md:pb-4">
+										<div className="rounded-[20px] border border-border/70 px-4 py-5">
+											<div className="flex h-[240px] flex-col justify-between">
+												{Array.from({ length: 4 }).map((_, index) => (
+													<Skeleton
+														key={index}
+														className="h-px w-full rounded-full"
+													/>
+												))}
+											</div>
+										</div>
+										<div className="flex flex-wrap items-center gap-4 border-t border-border/70 px-3 pt-4 text-sm md:px-4">
+											{Array.from({ length: 4 }).map((_, index) => (
+												<div key={index} className="flex items-center gap-2">
+													<Skeleton className="size-2.5 rounded-full" />
+													<Skeleton className="h-4 w-12 rounded-full" />
+												</div>
+											))}
+										</div>
+									</div>
+								</CardContent>
+							</Card>
+						</div>
+					</div>
+
+					<Card className="rounded-[28px] border-border bg-card/90 py-0 shadow-[0_20px_80px_rgba(0,0,0,0.32)]">
+						<CardHeader className="gap-5 border-b border-border px-5 py-5 md:px-8">
+							<div>
+								<Skeleton className="h-8 w-44 rounded-full" />
+								<Skeleton className="mt-2 h-4 w-80 rounded-full" />
+							</div>
+							<div className="flex flex-wrap items-center gap-3">
+								<Skeleton className="h-11 w-[220px] rounded-full" />
+							</div>
+						</CardHeader>
+
+						<div className="px-6 py-4">
+							<div
+								className="border-b border-border/30 bg-muted/15 px-0 py-3"
+								style={{
+									display: "grid",
+									gridTemplateColumns:
+										"240px minmax(92px,1fr) minmax(92px,1fr) minmax(72px,1fr) minmax(116px,1fr) minmax(120px,1fr) 74px",
+									columnGap: "10px",
+								}}
+							>
+								{Array.from({ length: 7 }).map((_, index) => (
+									<Skeleton
+										key={index}
+										className="h-4 w-16 rounded-full"
+									/>
+								))}
+							</div>
+							<div className="divide-y divide-border/20">
+								{Array.from({ length: 8 }).map((_, rowIndex) => (
+									<div
+										key={rowIndex}
+										className="px-0 py-4"
+										style={{
+											display: "grid",
+											gridTemplateColumns:
+												"240px minmax(92px,1fr) minmax(92px,1fr) minmax(72px,1fr) minmax(116px,1fr) minmax(120px,1fr) 74px",
+											columnGap: "10px",
+										}}
+									>
+										<div className="flex items-center gap-3">
+											<Skeleton className="size-11 rounded-full" />
+											<div className="min-w-0">
+												<Skeleton className="h-5 w-28 rounded-full" />
+												<Skeleton className="mt-2 h-4 w-16 rounded-full" />
+											</div>
+										</div>
+										<Skeleton className="h-5 w-20 self-center rounded-full" />
+										<Skeleton className="h-5 w-16 self-center rounded-full" />
+										<Skeleton className="h-5 w-20 self-center rounded-full" />
+										<Skeleton className="h-5 w-24 self-center rounded-full" />
+										<Skeleton className="h-5 w-28 self-center rounded-full" />
+										<div className="flex justify-end">
+											<Skeleton className="size-9 rounded-full" />
+										</div>
+									</div>
+								))}
+							</div>
+						</div>
+					</Card>
+				</div>
+			</div>
+		</div>
 	);
 }
 

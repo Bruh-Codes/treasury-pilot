@@ -11,7 +11,16 @@ export function ReownProvider({
 }: {
 	children: React.ReactNode;
 }) {
-	const [queryClient] = useState(() => new QueryClient());
+	const [queryClient] = useState(
+		() =>
+			new QueryClient({
+				defaultOptions: {
+					queries: {
+						refetchOnReconnect: true,
+					},
+				},
+			}),
+	);
 	ensureReownAppKit();
 
 	return (
