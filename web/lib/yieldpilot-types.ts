@@ -1,5 +1,14 @@
 export type RiskPreset = "conservative" | "balanced" | "yield";
 export type LiquidityPreset = "instant" | "weekly" | "flexible";
+export type AssetRegistryStatus = "discovered" | "reviewed" | "whitelisted";
+export type AssetRegistryType =
+  | "stablecoin"
+  | "wrapped-native"
+  | "governance"
+  | "tokenized-equity"
+  | "etf"
+  | "rwa"
+  | "other";
 
 export type StrategyLiquidity = "Instant" | "1-3 days" | "7 days" | "Flexible";
 export type StrategyRisk = "Low" | "Medium" | "Medium-High" | "High";
@@ -91,4 +100,41 @@ export type AssetMarketSummary = {
   totalTvlUsd: number;
   availableLiquidityUsd: number;
   supported: boolean;
+  chain?: string;
+  address?: string;
+  decimals?: number;
+  assetType?: AssetRegistryType;
+  status?: AssetRegistryStatus;
+  reviewed?: boolean;
+  recommendationEnabled?: boolean;
+  executionEnabled?: boolean;
+  depositEnabled?: boolean;
+  sourceOfTruthUrl?: string;
+  issuer?: string;
+  notes?: string;
+};
+
+export type AssetRegistryEntry = {
+  id?: number;
+  chainId: number;
+  chainKey: string;
+  address: string;
+  symbol: string;
+  name: string;
+  decimals: number;
+  assetType: AssetRegistryType;
+  status: AssetRegistryStatus;
+  isReviewed: boolean;
+  recommendationEnabled: boolean;
+  executionEnabled: boolean;
+  depositEnabled: boolean;
+  hasTransferRestrictions: boolean;
+  canBeFrozen: boolean;
+  isCanonical: boolean;
+  issuer?: string | null;
+  sourceOfTruthUrl?: string | null;
+  iconUrl?: string | null;
+  notes?: string | null;
+  reviewedBy?: string | null;
+  reviewedAt?: string | null;
 };

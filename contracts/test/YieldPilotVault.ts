@@ -24,8 +24,9 @@ describe("YieldPilotVault", async function () {
       parameters: {
         YieldPilotVaultProxyModule: {
           asset: asset.address,
-          name: "YieldPilot USDC Vault",
-          symbol: "ypUSDC",
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
+          unwindFeeBps: 0n,
         },
       },
     });
@@ -76,6 +77,51 @@ describe("YieldPilotVault", async function () {
     assert.equal(await vault.read.totalStrategyAssets(), parseUnits("18750", 6));
   });
 
+  it("charges no fee when idle liquidity fully covers a withdrawal", async function () {
+    const asset = await viem.deployContract("MockERC20", ["Mock USD Coin", "mUSDC", 6]);
+    const depositAmount = parseUnits("5000", 6);
+    const withdrawAmount = parseUnits("1200", 6);
+
+    await asset.write.mint([alice.account.address, depositAmount]);
+
+    const { vault } = await ignition.deploy(YieldPilotVaultModule, {
+      deploymentId: "vault-idle-withdraw-no-fee",
+      parameters: {
+        YieldPilotVaultProxyModule: {
+          asset: asset.address,
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
+          unwindFeeBps: 0n,
+        },
+      },
+    });
+
+    await vault.write.setWithdrawalFee([bob.account.address, 30]);
+
+    await asset.write.approve([vault.address, depositAmount], {
+      account: alice.account,
+    });
+    await vault.write.deposit([depositAmount, alice.account.address], {
+      account: alice.account,
+    });
+
+    const previewShares = await vault.read.previewWithdraw([withdrawAmount]);
+    assert.equal(previewShares, withdrawAmount);
+
+    const treasuryBefore = await asset.read.balanceOf([bob.account.address]);
+    const aliceBefore = await asset.read.balanceOf([alice.account.address]);
+
+    await vault.write.withdraw([withdrawAmount, alice.account.address, alice.account.address], {
+      account: alice.account,
+    });
+
+    const treasuryAfter = await asset.read.balanceOf([bob.account.address]);
+    const aliceAfter = await asset.read.balanceOf([alice.account.address]);
+
+    assert.equal(treasuryAfter - treasuryBefore, 0n);
+    assert.equal(aliceAfter - aliceBefore, withdrawAmount);
+  });
+
   it("supports strategy accounting sync and blocks fresh deposits while paused", async function () {
     const asset = await viem.deployContract("MockERC20", ["Mock USD Coin", "mUSDC", 6]);
     const depositAmount = parseUnits("5000", 6);
@@ -87,8 +133,9 @@ describe("YieldPilotVault", async function () {
       parameters: {
         YieldPilotVaultProxyModule: {
           asset: asset.address,
-          name: "YieldPilot USDC Vault",
-          symbol: "ypUSDC",
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
+          unwindFeeBps: 0n,
         },
       },
     });
@@ -135,8 +182,8 @@ describe("YieldPilotVault", async function () {
       parameters: {
         YieldPilotVaultProxyModule: {
           asset: asset.address,
-          name: "YieldPilot USDC Vault",
-          symbol: "ypUSDC",
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
         },
       },
     });
@@ -177,8 +224,8 @@ describe("YieldPilotVault", async function () {
       parameters: {
         YieldPilotVaultProxyModule: {
           asset: asset.address,
-          name: "YieldPilot USDC Vault",
-          symbol: "ypUSDC",
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
         },
       },
     });
@@ -190,6 +237,7 @@ describe("YieldPilotVault", async function () {
     await strategyTwo.write.setVault([vault.address]);
     await vault.write.whitelistStrategy([strategyOne.address]);
     await vault.write.whitelistStrategy([strategyTwo.address]);
+    await vault.write.setWithdrawalFee([owner.account.address, 0]);
 
     await asset.write.approve([vault.address, depositAmount], {
       account: alice.account,
@@ -215,6 +263,109 @@ describe("YieldPilotVault", async function () {
     assert.equal(await strategyOne.read.totalAssets(), parseUnits("4000", 6));
   });
 
+  it("charges the unwind fee only on the recalled portion of a withdrawal", async function () {
+    const asset = await viem.deployContract("MockERC20", ["Mock USD Coin", "mUSDC", 6]);
+    const depositAmount = parseUnits("10000", 6);
+    const withdrawAmount = parseUnits("5000", 6);
+
+    await asset.write.mint([alice.account.address, depositAmount]);
+
+    const { vault } = await ignition.deploy(YieldPilotVaultModule, {
+      deploymentId: "vault-unwind-fee",
+      parameters: {
+        YieldPilotVaultProxyModule: {
+          asset: asset.address,
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
+        },
+      },
+    });
+
+    const strategy = await viem.deployContract("MockStrategyAdapter", [asset.address]);
+    await strategy.write.setVault([vault.address]);
+    await vault.write.whitelistStrategy([strategy.address]);
+    await vault.write.setWithdrawalFee([bob.account.address, 30]);
+
+    await asset.write.approve([vault.address, depositAmount], {
+      account: alice.account,
+    });
+    await vault.write.deposit([depositAmount, alice.account.address], {
+      account: alice.account,
+    });
+    await vault.write.deployToStrategy([strategy.address, parseUnits("8000", 6)]);
+
+    const [availableNow, needsUnwind, feeAssets] = await vault.read.previewWithdrawalFee([withdrawAmount]);
+    assert.equal(availableNow, parseUnits("2000", 6));
+    assert.equal(needsUnwind, parseUnits("3000", 6));
+    assert.equal(feeAssets, parseUnits("9", 6));
+
+    const previewShares = await vault.read.previewWithdraw([withdrawAmount]);
+    assert.equal(previewShares, parseUnits("5009", 6));
+    assert.equal(await vault.read.previewRedeem([previewShares]), withdrawAmount);
+
+    const treasuryBefore = await asset.read.balanceOf([bob.account.address]);
+    const aliceBefore = await asset.read.balanceOf([alice.account.address]);
+
+    await vault.write.withdraw([withdrawAmount, alice.account.address, alice.account.address], {
+      account: alice.account,
+    });
+
+    const treasuryAfter = await asset.read.balanceOf([bob.account.address]);
+    const aliceAfter = await asset.read.balanceOf([alice.account.address]);
+
+    assert.equal(treasuryAfter - treasuryBefore, parseUnits("9", 6));
+    assert.equal(aliceAfter - aliceBefore, withdrawAmount);
+    assert.equal(await strategy.read.totalAssets(), parseUnits("4991", 6));
+    assert.equal(await vault.read.balanceOf([alice.account.address]), parseUnits("4991", 6));
+  });
+
+  it("reduces redeem output by the unwind fee while keeping instant redemptions fee-free", async function () {
+    const asset = await viem.deployContract("MockERC20", ["Mock USD Coin", "mUSDC", 6]);
+    const depositAmount = parseUnits("10000", 6);
+
+    await asset.write.mint([alice.account.address, depositAmount]);
+
+    const { vault } = await ignition.deploy(YieldPilotVaultModule, {
+      deploymentId: "vault-redeem-unwind-fee",
+      parameters: {
+        YieldPilotVaultProxyModule: {
+          asset: asset.address,
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
+        },
+      },
+    });
+
+    const strategy = await viem.deployContract("MockStrategyAdapter", [asset.address]);
+    await strategy.write.setVault([vault.address]);
+    await vault.write.whitelistStrategy([strategy.address]);
+    await vault.write.setWithdrawalFee([bob.account.address, 30]);
+
+    await asset.write.approve([vault.address, depositAmount], {
+      account: alice.account,
+    });
+    await vault.write.deposit([depositAmount, alice.account.address], {
+      account: alice.account,
+    });
+    await vault.write.deployToStrategy([strategy.address, parseUnits("8000", 6)]);
+
+    assert.equal(await vault.read.previewRedeem([parseUnits("2000", 6)]), parseUnits("2000", 6));
+    assert.equal(await vault.read.previewRedeem([parseUnits("5009", 6)]), parseUnits("5000", 6));
+
+    const treasuryBefore = await asset.read.balanceOf([bob.account.address]);
+    const aliceBefore = await asset.read.balanceOf([alice.account.address]);
+
+    await vault.write.redeem([parseUnits("5009", 6), alice.account.address, alice.account.address], {
+      account: alice.account,
+    });
+
+    const treasuryAfter = await asset.read.balanceOf([bob.account.address]);
+    const aliceAfter = await asset.read.balanceOf([alice.account.address]);
+
+    assert.equal(treasuryAfter - treasuryBefore, parseUnits("9", 6));
+    assert.equal(aliceAfter - aliceBefore, parseUnits("5000", 6));
+  });
+
   it("blocks strategy callback reentry during deployment", async function () {
     const asset = await viem.deployContract("MockERC20", ["Mock USD Coin", "mUSDC", 6]);
     const depositAmount = parseUnits("5000", 6);
@@ -226,8 +377,8 @@ describe("YieldPilotVault", async function () {
       parameters: {
         YieldPilotVaultProxyModule: {
           asset: asset.address,
-          name: "YieldPilot USDC Vault",
-          symbol: "ypUSDC",
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
         },
       },
     });
@@ -260,8 +411,8 @@ describe("YieldPilotVault", async function () {
       parameters: {
         YieldPilotVaultProxyModule: {
           asset: asset.address,
-          name: "YieldPilot USDC Vault",
-          symbol: "ypUSDC",
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
         },
       },
     });
@@ -298,8 +449,8 @@ describe("YieldPilotVault", async function () {
       parameters: {
         YieldPilotVaultProxyModule: {
           asset: asset.address,
-          name: "YieldPilot USDC Vault",
-          symbol: "ypUSDC",
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
         },
       },
     });
@@ -338,8 +489,8 @@ describe("YieldPilotVault", async function () {
       parameters: {
         YieldPilotVaultProxyModule: {
           asset: asset.address,
-          name: "YieldPilot USDC Vault",
-          symbol: "ypUSDC",
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
         },
         YieldPilotVaultUpgradeModule: {
           reserveTargetBps: 1_500n,
@@ -356,7 +507,37 @@ describe("YieldPilotVault", async function () {
     const asset = await viem.deployContract("MockERC20", ["Mock USD Coin", "mUSDC", 6]);
 
     await assert.rejects(
-      implementation.write.initialize([asset.address, "YieldPilot USDC Vault", "ypUSDC", owner.account.address]),
+      implementation.write.initialize([asset.address, "Kabon USDC Vault", "kbUSDC", owner.account.address]),
+    );
+  });
+
+  it("lets the owner configure the unwind fee within the capped range", async function () {
+    const asset = await viem.deployContract("MockERC20", ["Mock USD Coin", "mUSDC", 6]);
+
+    const { vault } = await ignition.deploy(YieldPilotVaultModule, {
+      deploymentId: "vault-withdrawal-fee-config",
+      parameters: {
+        YieldPilotVaultProxyModule: {
+          asset: asset.address,
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
+        },
+      },
+    });
+
+    assert.equal((await vault.read.feeRecipient()).toLowerCase(), owner.account.address.toLowerCase());
+    assert.equal(await vault.read.unwindFeeBps(), 500);
+
+    await vault.write.setWithdrawalFee([bob.account.address, 100]);
+
+    assert.equal((await vault.read.feeRecipient()).toLowerCase(), bob.account.address.toLowerCase());
+    assert.equal(await vault.read.unwindFeeBps(), 100);
+
+    await assert.rejects(
+      vault.write.setWithdrawalFee(["0x0000000000000000000000000000000000000000", 100]),
+    );
+    await assert.rejects(
+      vault.write.setWithdrawalFee([bob.account.address, 1_001]),
     );
   });
 
@@ -371,8 +552,8 @@ describe("YieldPilotVault", async function () {
       parameters: {
         YieldPilotVaultProxyModule: {
           asset: asset.address,
-          name: "YieldPilot Fee Vault",
-          symbol: "ypFEE",
+          name: "Kabon Fee Vault",
+          symbol: "kbFEE",
         },
       },
     });
@@ -399,8 +580,8 @@ describe("YieldPilotVault", async function () {
       parameters: {
         YieldPilotVaultProxyModule: {
           asset: asset.address,
-          name: "YieldPilot USDC Vault",
-          symbol: "ypUSDC",
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
         },
       },
     });
@@ -433,8 +614,8 @@ describe("YieldPilotVault", async function () {
       parameters: {
         YieldPilotVaultProxyModule: {
           asset: asset.address,
-          name: "YieldPilot USDC Vault",
-          symbol: "ypUSDC",
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
         },
       },
     });
@@ -466,8 +647,8 @@ describe("YieldPilotVault", async function () {
       parameters: {
         YieldPilotVaultProxyModule: {
           asset: asset.address,
-          name: "YieldPilot USDC Vault",
-          symbol: "ypUSDC",
+          name: "Kabon USDC Vault",
+          symbol: "kbUSDC",
         },
       },
     });

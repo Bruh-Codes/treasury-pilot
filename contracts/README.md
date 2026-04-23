@@ -1,6 +1,6 @@
-# YieldPilot Contracts
+# Kabon Contracts
 
-Smart contracts for YieldPilot's shared-vault architecture, built with Hardhat 3, Ignition, viem, and OpenZeppelin.
+Smart contracts for Kabon's shared-vault architecture, built with Hardhat 3, Ignition, viem, and OpenZeppelin.
 
 ## Overview
 
@@ -23,6 +23,7 @@ Core components:
 3. the operator can deploy idle assets into approved strategies
 4. a user withdraws by redeeming shares for underlying assets
 5. if the vault does not have enough idle assets, it recalls capital from strategies using the configured withdrawal queue
+6. optional unwind fees can be charged only on the withdrawal portion that requires strategy recalls
 
 ### Accounting model
 
@@ -32,6 +33,17 @@ Core components:
 - plus `totalAllocatedAssets` tracked for active strategies
 
 The vault keeps per-strategy accounting and supports `syncStrategyAssets(...)` so gains or paused-loss events can be reflected in vault accounting.
+
+### Withdrawal fee model
+
+The vault can optionally charge an unwind withdrawal fee.
+
+- the owner sets `feeRecipient` and `unwindFeeBps`
+- the fee is `0` when idle liquidity fully covers a withdrawal
+- the fee applies only to the portion of a withdrawal that exceeds current idle liquidity
+- `withdraw(...)` preserves the caller's requested net assets and burns additional shares to cover the unwind fee
+- `redeem(...)` burns the requested shares and reduces the receiver's net assets by the unwind fee when a strategy recall is required
+- the Ignition deployment module defaults `unwindFeeBps` to `500`, which is `5%`
 
 ### Strategy model
 
@@ -142,8 +154,10 @@ Example parameter file:
 {
   "YieldPilotVaultProxyModule": {
     "asset": "0xYourAssetAddress",
-    "name": "YieldPilot USDC Vault",
-    "symbol": "ypUSDC"
+    "name": "Kabon USDC Vault",
+    "symbol": "kbUSDC",
+    "feeRecipient": "0xYourTreasuryAddress",
+    "unwindFeeBps": 500
   }
 }
 ```
@@ -160,8 +174,10 @@ Example upgrade parameter file:
 {
   "YieldPilotVaultProxyModule": {
     "asset": "0xYourAssetAddress",
-    "name": "YieldPilot USDC Vault",
-    "symbol": "ypUSDC"
+    "name": "Kabon USDC Vault",
+    "symbol": "kbUSDC",
+    "feeRecipient": "0xYourTreasuryAddress",
+    "unwindFeeBps": 500
   },
   "YieldPilotVaultUpgradeModule": {
     "reserveTargetBps": 2000

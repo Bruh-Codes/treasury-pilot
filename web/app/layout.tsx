@@ -12,11 +12,11 @@ import { ReownProvider } from "@/components/providers/reown-provider";
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
-	title: "YieldPilot — AI Treasury Copilot on Arbitrum",
+	title: "Kabon - AI Treasury Copilot on Arbitrum",
 	description:
 		"Policy-driven AI treasury copilot for stablecoin allocation on Arbitrum. Deposit USDC, set policy, approve allocations, withdraw on demand.",
 	openGraph: {
-		title: "YieldPilot — AI Treasury Copilot on Arbitrum",
+		title: "Kabon - AI Treasury Copilot on Arbitrum",
 		description:
 			"Policy-driven AI treasury copilot for stablecoin allocation on Arbitrum.",
 		type: "website",

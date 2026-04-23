@@ -9,14 +9,12 @@ function WithdrawPage() {
 	return (
 		<div className="px-6 py-8 md:px-10 md:py-10">
 			<PageHeader
-				eyebrow="Withdraw"
 				title="Withdraw"
 				description="Withdrawals will appear here once your live vault balance and queue status are connected."
 			/>
 
 			<div className="mt-10 grid gap-6 lg:grid-cols-[1fr_360px]">
 				<Card>
-					<CardHead title="Withdrawals coming soon" />
 					<div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-12 text-center">
 						<div className="mb-5 flex size-12 items-center justify-center rounded-full border border-border bg-background">
 							<Wallet className="size-5 text-muted-foreground" />
@@ -26,8 +24,7 @@ function WithdrawPage() {
 						</h2>
 						<p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">
 							This page will show your available withdrawal amount, any queued
-							withdrawals, and vault settlement progress after the frontend is
-							connected to the deployed vault contract.
+							withdrawals, and settlement progress.
 						</p>
 					</div>
 				</Card>
@@ -36,7 +33,7 @@ function WithdrawPage() {
 					<Card>
 						<CardHead title="What will show here" />
 						<div className="space-y-3 text-sm text-muted-foreground">
-							<p>Your withdrawable vault balance.</p>
+							<p>Your withdrawable balance.</p>
 							<p>Any pending withdrawal queue or settlement status.</p>
 							<p>Confirmation once assets are returned to your wallet.</p>
 						</div>

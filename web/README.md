@@ -1,6 +1,6 @@
-# YieldPilot Web
+# Kabon Web
 
-Next.js frontend for the YieldPilot product experience. This app presents vault-related views such as dashboard, activity, recommendation, deposit-oriented flows, and withdrawals, while also wiring wallet connectivity and app-facing API routes.
+Next.js frontend for the Kabon product experience. This app presents vault-related views such as dashboard, activity, recommendation, deposit-oriented flows, and withdrawals, while also wiring wallet connectivity and app-facing API routes.
 
 ## Stack
 
@@ -76,8 +76,17 @@ Depending on which API-backed or database-backed paths you use, you may also nee
 - RPC access
 - database connectivity
 - third-party data sources
+- vault address configuration for each supported asset and chain
 
 If you expand the app beyond the current prototype state, document those variables in `.env.example` and keep this README in sync.
+
+Current deposit integration expects:
+
+- `NEXT_PUBLIC_ARBITRUM_USDC_VAULT_ADDRESS`
+- `NEXT_PUBLIC_ARBITRUM_SEPOLIA_USDC_TOKEN_ADDRESS`
+- `NEXT_PUBLIC_ARBITRUM_SEPOLIA_USDC_VAULT_ADDRESS`
+- `NEXT_PUBLIC_ROBINHOOD_USDC_TOKEN_ADDRESS`
+- `NEXT_PUBLIC_ROBINHOOD_USDC_VAULT_ADDRESS`
 
 ## App Structure
 

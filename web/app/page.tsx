@@ -2,8 +2,14 @@
 
 import { useMemo, useState } from "react";
 import { useAppKitAccount } from "@reown/appkit/react";
-import { useBalance, useChainId, useReadContracts } from "wagmi";
-import { erc20Abi, formatUnits, type Address } from "viem";
+import {
+	useBalance,
+	useChainId,
+	usePublicClient,
+	useReadContracts,
+	useWalletClient,
+} from "wagmi";
+import { erc20Abi, formatUnits, parseUnits, type Address } from "viem";
 import {
 	CircleArrowDown,
 	ChevronDown,
@@ -42,12 +48,18 @@ import {
 } from "@/components/ui/financial-markets-table";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import {
 	Tooltip,
 	TooltipContent,
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { APP_SUPPORTED_CHAINS, PRIMARY_CHAIN_LABEL } from "@/lib/app-chains";
+import { yieldPilotVaultAbi } from "@/lib/vault-abi";
+import {
+	getSupportedVaultAsset,
+	getSupportedVaultAssets,
+} from "@/lib/vault-registry";
 import { useAssetSummaries } from "@/lib/use-yieldpilot-market-data";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
@@ -64,16 +76,35 @@ type AssetItem = {
 	availableLiquidity: string;
 	supported: boolean;
 	iconClass: string;
+	tokenAddress?: Address;
+	tokenDecimals?: number;
+	vaultAddress?: Address;
+	vaultLabel?: string;
 };
 
 type RangeKey = "1D" | "1W" | "1M" | "6M" | "1Y" | "All";
 
 const RANGE_OPTIONS: RangeKey[] = ["1D", "1W", "1M", "6M", "1Y", "All"];
 
+function readAddress(value: string | undefined): Address | undefined {
+	return value && /^0x[a-fA-F0-9]{40}$/.test(value)
+		? (value as Address)
+		: undefined;
+}
+
+const arbitrumSepoliaUsdcTokenAddress = readAddress(
+	process.env.NEXT_PUBLIC_ARBITRUM_SEPOLIA_USDC_TOKEN_ADDRESS,
+);
+const robinhoodUsdcTokenAddress = readAddress(
+	process.env.NEXT_PUBLIC_ROBINHOOD_USDC_TOKEN_ADDRESS,
+);
+
 const TRACKED_TOKEN_CONFIG: Partial<
 	Record<
 		number,
-		Partial<Record<string, { address: Address; decimals: number; stable: boolean }>>
+		Partial<
+			Record<string, { address: Address; decimals: number; stable: boolean }>
+		>
 	>
 > = {
 	42161: {
@@ -113,6 +144,24 @@ const TRACKED_TOKEN_CONFIG: Partial<
 			stable: false,
 		},
 	},
+	421614: arbitrumSepoliaUsdcTokenAddress
+		? {
+				USDC: {
+					address: arbitrumSepoliaUsdcTokenAddress,
+					decimals: 6,
+					stable: true,
+				},
+			}
+		: {},
+	46630: robinhoodUsdcTokenAddress
+		? {
+				USDC: {
+					address: robinhoodUsdcTokenAddress,
+					decimals: 6,
+					stable: true,
+				},
+			}
+		: {},
 };
 
 const ASSET_VISUALS: Record<string, { iconUrl?: string; iconClass: string }> = {
@@ -176,7 +225,7 @@ function compactAmount(value: number) {
 	}).format(value);
 }
 
-export default function DepositPage() {
+export default function DashboardPage() {
 	const assetSummaries = useAssetSummaries();
 	const { address } = useAppKitAccount();
 	const chainId = useChainId();
@@ -184,11 +233,18 @@ export default function DepositPage() {
 	const [noBalanceAsset, setNoBalanceAsset] = useState<AssetItem | null>(null);
 	const [depositAsset, setDepositAsset] = useState<AssetItem | null>(null);
 	const [depositAmount, setDepositAmount] = useState("0");
+	const [isDepositing, setIsDepositing] = useState(false);
 	const [receiveOpen, setReceiveOpen] = useState(false);
 	const [chainsOpen, setChainsOpen] = useState(false);
 	const [selectedRange, setSelectedRange] = useState<RangeKey>("1W");
-	const vaultAddress = "0x8F3A...C2E7";
 	const summaries = assetSummaries.data?.assets ?? [];
+	const publicClient = usePublicClient();
+	const { data: walletClient } = useWalletClient();
+	const supportedVaultAssets = useMemo(
+		() => getSupportedVaultAssets(chainId),
+		[chainId],
+	);
+	const receiveVaultAsset = supportedVaultAssets[0];
 	const nativeBalance = useBalance({
 		address: address as Address | undefined,
 		query: {
@@ -277,6 +333,7 @@ export default function DepositPage() {
 		}
 
 		return summaries.map((summary) => {
+			const vaultConfig = getSupportedVaultAsset(chainId, summary.symbol);
 			const visuals = ASSET_VISUALS[summary.symbol] ?? {
 				iconClass: "from-neutral-500 to-neutral-700",
 			};
@@ -299,11 +356,15 @@ export default function DepositPage() {
 					summary.availableLiquidityUsd > 0
 						? `${compactAmount(summary.availableLiquidityUsd)} liquid`
 						: "-",
-				supported: summary.supported,
+				supported: summary.supported && Boolean(vaultConfig),
 				iconClass: visuals.iconClass,
+				tokenAddress: vaultConfig?.tokenAddress,
+				tokenDecimals: vaultConfig?.tokenDecimals,
+				vaultAddress: vaultConfig?.vaultAddress,
+				vaultLabel: vaultConfig?.vaultLabel,
 			};
 		});
-	}, [assetSummaries.isLoading, balanceBySymbol, summaries]);
+	}, [assetSummaries.isLoading, balanceBySymbol, chainId, summaries]);
 
 	const walletAssets = useMemo(
 		() =>
@@ -312,6 +373,10 @@ export default function DepositPage() {
 				.sort((left, right) => right.walletBalance - left.walletBalance),
 		[assets],
 	);
+	const supportedDepositAssets = useMemo(
+		() => walletAssets.filter((asset) => asset.supported),
+		[walletAssets],
+	);
 	const totalWalletStableBalance = useMemo(
 		() =>
 			Array.from(balanceBySymbol.values())
@@ -319,7 +384,7 @@ export default function DepositPage() {
 				.reduce((sum, asset) => sum + asset.balance, 0),
 		[balanceBySymbol],
 	);
-	const supportedWalletAssets = walletAssets.filter((asset) => asset.supported).length;
+	const supportedWalletAssets = supportedDepositAssets.length;
 
 	const filtered = useMemo(() => {
 		const term = search.trim().toLowerCase();
@@ -634,10 +699,16 @@ export default function DepositPage() {
 		return series[selectedRange];
 	}, [selectedRange, totalWalletStableBalance]);
 
+	const selectedDepositUsd = Number(depositAmount || 0) || 0;
+	const selectedDepositApy =
+		depositAsset?.apy && depositAsset.apy !== "-"
+			? depositAsset.apy.replace(" avg", "")
+			: "0.00%";
+
 	function openDeposit(asset: AssetItem) {
 		setDepositAsset(asset);
 		setDepositAmount(
-			asset.walletBalance > 0
+			asset.walletBalance && asset.walletBalance > 0
 				? Math.min(asset.walletBalance, 5000).toString()
 				: "0",
 		);
@@ -655,22 +726,97 @@ export default function DepositPage() {
 		openDeposit(asset);
 	}
 
-	function confirmDeposit() {
+	async function confirmDeposit() {
 		if (!depositAsset) return;
 		const amount = Number(depositAmount) || 0;
-		if (amount <= 0 || amount > depositAsset.walletBalance) return;
+		if (amount <= 0) return;
+		if (
+			depositAsset.walletBalance !== undefined &&
+			amount > depositAsset.walletBalance
+		)
+			return;
 		if (!address) {
 			toast.error("Connect your wallet first");
 			return;
 		}
-		setDepositAsset(null);
-		toast.message("Live deposit execution is not wired yet", {
-			description:
-				"Demo vault balances were removed. The next step is connecting this flow to the deployed vault contract.",
-		});
+
+		if (
+			!depositAsset.tokenAddress ||
+			!depositAsset.tokenDecimals ||
+			!depositAsset.vaultAddress
+		) {
+			toast.error(
+				"No supported vault is configured for this asset on the current chain",
+			);
+			return;
+		}
+
+		if (!walletClient || !publicClient) {
+			toast.error("Wallet client is not ready yet");
+			return;
+		}
+
+		try {
+			setIsDepositing(true);
+
+			const parsedAmount = parseUnits(
+				depositAmount,
+				depositAsset.tokenDecimals,
+			);
+
+			const allowance = await publicClient.readContract({
+				address: depositAsset.tokenAddress,
+				abi: erc20Abi,
+				functionName: "allowance",
+				args: [address as Address, depositAsset.vaultAddress],
+			});
+
+			if (allowance < parsedAmount) {
+				toast.message(`Approving ${depositAsset.symbol} for vault deposit...`);
+				const approveHash = await walletClient.writeContract({
+					address: depositAsset.tokenAddress,
+					abi: erc20Abi,
+					functionName: "approve",
+					args: [depositAsset.vaultAddress, parsedAmount],
+					account: walletClient.account,
+					chain: walletClient.chain,
+				});
+				await publicClient.waitForTransactionReceipt({ hash: approveHash });
+			}
+
+			toast.message(`Depositing ${depositAmount} ${depositAsset.symbol}...`);
+			const depositHash = await walletClient.writeContract({
+				address: depositAsset.vaultAddress,
+				abi: yieldPilotVaultAbi,
+				functionName: "deposit",
+				args: [parsedAmount, address as Address],
+				account: walletClient.account,
+				chain: walletClient.chain,
+			});
+			await publicClient.waitForTransactionReceipt({ hash: depositHash });
+
+			setDepositAsset(null);
+			toast.success("Deposit submitted successfully", {
+				description: `${depositAmount} ${depositAsset.symbol} was deposited into ${depositAsset.vaultLabel ?? "the selected vault"}.`,
+			});
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : "Deposit transaction failed";
+			toast.error("Deposit failed", {
+				description: message,
+			});
+		} finally {
+			setIsDepositing(false);
+		}
 	}
 
 	function copyVaultAddress() {
+		const vaultAddress = receiveVaultAsset?.vaultAddress;
+		if (!vaultAddress) {
+			toast.error("No vault address is configured for this network");
+			return;
+		}
+
 		void (async () => {
 			try {
 				if (navigator.clipboard?.writeText) {
@@ -694,7 +840,7 @@ export default function DepositPage() {
 	}
 
 	if (isPageLoading) {
-		return <DepositPageSkeleton />;
+		return <DashboardPageSkeleton />;
 	}
 
 	return (
@@ -765,12 +911,14 @@ export default function DepositPage() {
 									variant="secondary"
 									className="h-12 rounded-full px-4 text-sm font-semibold"
 									onClick={() => {
-										const firstWalletAsset = walletAssets[0];
-										if (!firstWalletAsset) {
-											toast.error("No wallet assets detected on this chain");
+										const vaultAssets = getSupportedVaultAssets(chainId);
+										if (vaultAssets.length === 0) {
+											toast.error("No vault is configured for this chain");
 											return;
 										}
-										openDeposit(firstWalletAsset);
+										const firstSupportedAsset =
+											supportedDepositAssets[0] ?? vaultAssets[0];
+										openDeposit(firstSupportedAsset);
 									}}
 								>
 									<CircleArrowDown data-icon="inline-start" />
@@ -787,8 +935,8 @@ export default function DepositPage() {
 													Depositable assets
 												</p>
 												<p className="mt-1 text-xs text-muted-foreground/75">
-													Wallet balances on the current chain, paired with
-													live Arbitrum APY and liquidity context.
+													Wallet balances on the current chain, paired with live
+													Arbitrum APY and liquidity context.
 												</p>
 											</div>
 										</div>
@@ -997,172 +1145,178 @@ export default function DepositPage() {
 			>
 				<DialogContent
 					showCloseButton={false}
-					className="w-[92vw] max-w-[520px] rounded-[28px] border border-border/80 bg-popover p-0 shadow-[0_24px_80px_rgba(0,0,0,0.42)] sm:w-[520px] sm:max-w-[520px]"
+					className="w-[92vw] max-w-[480px] overflow-hidden rounded-[28px] border border-white/6 bg-[#121111] p-0 text-white shadow-[0_36px_120px_rgba(0,0,0,0.55)] sm:w-[480px] sm:max-w-[480px]"
 				>
 					{depositAsset && (
-						<div className="p-4">
-							<div className="mb-2 flex items-center justify-end">
-								<DialogClose className="rounded-full p-1 text-muted-foreground transition-colors hover:text-foreground">
+						<div className="bg-[#121111] p-5 sm:p-6">
+							<div className="mb-4 flex items-center justify-end">
+								<DialogClose className="rounded-full p-1 text-white/45 transition-colors hover:text-white">
 									<X className="size-5" />
 								</DialogClose>
 							</div>
-							<div className="space-y-3">
-								<div className="rounded-[22px] border border-border/70 bg-card px-4 py-4">
-									<div className="flex items-start justify-between gap-4">
-										<div>
-											<div className="text-sm text-muted-foreground">
-												Deposit
+							<div className="space-y-4">
+								<div className="rounded-[24px] border border-white/6 bg-[#232021] px-6 py-5">
+									<div className="flex flex-col gap-5">
+										<div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+											<div className="min-w-0 flex-1">
+												<div className="text-[18px] font-medium tracking-tight text-white/58">
+													Deposit
+												</div>
+												<Input
+													value={depositAmount}
+													onChange={(event) =>
+														setDepositAmount(
+															event.target.value.replace(/[^0-9.]/g, ""),
+														)
+													}
+													inputMode="decimal"
+													placeholder="0"
+													className="mt-3 h-auto border-0 bg-transparent px-0 py-0 text-[48px] font-medium leading-none tracking-tight text-white shadow-none placeholder:text-white/22 focus-visible:ring-0"
+												/>
 											</div>
-											<Input
-												value={depositAmount}
-												onChange={(event) =>
-													setDepositAmount(
-														event.target.value.replace(/[^0-9.]/g, ""),
-													)
-												}
-												inputMode="decimal"
-												placeholder="0"
-												className="mt-2 h-auto border-0 bg-transparent px-0 py-0 text-[40px] font-semibold leading-none tracking-tight text-foreground shadow-none placeholder:text-foreground/40 focus-visible:ring-0"
-											/>
-										</div>
-										<DropdownMenu>
-											<DropdownMenuTrigger asChild>
-												<button
-													type="button"
-													className="flex items-center gap-2 rounded-full border border-border bg-background/80 px-3 py-2 text-sm font-semibold text-foreground"
-												>
-													<Avatar className="size-7 border border-border/40">
-														<AvatarImage
-															src={depositAsset.iconUrl}
-															alt={`${depositAsset.name} icon`}
-															className="object-contain bg-background p-1.5"
-														/>
-														<AvatarFallback
-															className={`bg-gradient-to-br text-sm font-semibold text-white ${depositAsset.iconClass}`}
-														>
-															{depositAsset.symbol.slice(0, 1)}
-														</AvatarFallback>
-													</Avatar>
-													{depositAsset.symbol}
-													<ChevronDown className="size-4 text-muted-foreground" />
-												</button>
-											</DropdownMenuTrigger>
-											<DropdownMenuContent
-												align="end"
-												className="w-56 rounded-2xl border border-border/80 bg-popover p-2"
-											>
-												{assets.map((asset) => (
-													<DropdownMenuItem
-														key={asset.id}
-														onClick={() => openDeposit(asset)}
-														className="rounded-xl px-2 py-2"
+											<DropdownMenu>
+												<DropdownMenuTrigger asChild>
+													<button
+														type="button"
+														className="mt-2 flex items-center gap-2 self-start rounded-full bg-white/5 px-4 py-3 text-[18px] font-medium text-white transition-colors hover:bg-white/8"
 													>
-														<Avatar className="size-7 border border-border/40">
+														<Avatar className="size-9 border border-white/10 bg-[#2a2728]">
 															<AvatarImage
-																src={asset.iconUrl}
-																alt={`${asset.name} icon`}
-																className="object-contain bg-background p-1.5"
+																src={depositAsset.iconUrl}
+																alt={`${depositAsset.name} icon`}
+																className="object-contain bg-transparent p-2"
 															/>
 															<AvatarFallback
-																className={`bg-gradient-to-br text-xs font-semibold text-white ${asset.iconClass}`}
+																className={`bg-gradient-to-br text-sm font-semibold text-white ${depositAsset.iconClass}`}
 															>
-																{asset.symbol.slice(0, 1)}
+																{depositAsset.symbol.slice(0, 1)}
 															</AvatarFallback>
 														</Avatar>
-														<div className="flex min-w-0 flex-1 items-center justify-between gap-3">
-															<div className="min-w-0">
-																<div className="truncate font-medium text-foreground">
-																	{asset.symbol}
+														{depositAsset.symbol}
+														<ChevronDown className="size-5 text-white/55" />
+													</button>
+												</DropdownMenuTrigger>
+												<DropdownMenuContent
+													align="end"
+													className="w-60 rounded-3xl border-white/10 bg-[#232021] p-2 text-white"
+												>
+													{supportedDepositAssets.map((asset) => (
+														<DropdownMenuItem
+															key={asset.id}
+															onClick={() => openDeposit(asset)}
+															className="rounded-2xl px-3 py-3 text-white focus:bg-white/8 focus:text-white"
+														>
+															<Avatar className="size-8 border border-white/10 bg-[#2a2728]">
+																<AvatarImage
+																	src={asset.iconUrl}
+																	alt={`${asset.name} icon`}
+																	className="object-contain bg-transparent p-1.5"
+																/>
+																<AvatarFallback
+																	className={`bg-gradient-to-br text-xs font-semibold text-white ${asset.iconClass}`}
+																>
+																	{asset.symbol.slice(0, 1)}
+																</AvatarFallback>
+															</Avatar>
+															<div className="ml-3 flex min-w-0 flex-1 items-center justify-between gap-3">
+																<div className="min-w-0">
+																	<div className="truncate font-medium text-white">
+																		{asset.symbol}
+																	</div>
+																	<div className="truncate text-xs text-white/45">
+																		{asset.name}
+																	</div>
 																</div>
-																<div className="truncate text-xs text-muted-foreground">
-																	{asset.name}
+																<div className="text-xs text-white/45">
+																	{(asset.walletBalance ?? 0).toLocaleString()}
 																</div>
 															</div>
-															<div className="text-xs text-muted-foreground">
-																{asset.walletBalance.toLocaleString()}
-															</div>
-														</div>
-													</DropdownMenuItem>
-												))}
-											</DropdownMenuContent>
-										</DropdownMenu>
-									</div>
-
-									<div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-muted-foreground">
-										<div>
-											~ $
-											{(Number(depositAmount || 0) || 0).toLocaleString(
-												undefined,
-												{
-													minimumFractionDigits: 2,
-													maximumFractionDigits: 2,
-												},
-											)}
+														</DropdownMenuItem>
+													))}
+												</DropdownMenuContent>
+											</DropdownMenu>
 										</div>
-										<div className="flex items-center gap-3">
-											<span>
-												Balance:{" "}
-												<span className="text-foreground">
-													{depositAsset.walletBalance.toLocaleString()}
+
+										<div className="flex flex-wrap items-center justify-between gap-4 text-[16px] text-white/55">
+											<div className="flex items-center gap-2">
+												<span className="text-white/45">⇅</span>
+												<span>
+													$
+													{selectedDepositUsd.toLocaleString(undefined, {
+														minimumFractionDigits: 2,
+														maximumFractionDigits: 2,
+													})}
 												</span>
-											</span>
-											<Button
-												type="button"
-												variant="secondary"
-												className="h-7 rounded-full px-2.5 text-xs font-semibold"
-												onClick={() =>
-													setDepositAmount(
-														depositAsset.walletBalance.toString(),
-													)
+											</div>
+											<div className="flex items-center gap-4">
+												<span>
+													Balance:{" "}
+													<span className="text-white/72">
+														{(depositAsset.walletBalance ?? 0).toLocaleString()}
+													</span>
+												</span>
+												<button
+													type="button"
+													className="font-medium text-white transition-opacity hover:opacity-80"
+													onClick={() =>
+														setDepositAmount(
+															(depositAsset.walletBalance ?? 0).toString(),
+														)
+													}
+												>
+													Max
+												</button>
+											</div>
+										</div>
+
+										<div className="border-t border-white/10 pt-2">
+											<DepositModalRow
+												label={`Deposit ${depositAsset.symbol}`}
+												info
+												right={
+													<Switch
+														checked
+														disabled
+														aria-label={`Deposit ${depositAsset.symbol}`}
+														className="data-checked:bg-[#7f7cff] data-disabled:opacity-100"
+													/>
 												}
-											>
-												Max
-											</Button>
+											/>
+											<DepositModalRow
+												label="Deposit APY"
+												info
+												last
+												right={
+													<span className="text-[18px] font-medium text-white">
+														{selectedDepositApy}
+													</span>
+												}
+											/>
 										</div>
 									</div>
 								</div>
 
-								<div className="rounded-[22px] border border-border/70 bg-card px-4 py-3">
-									<CompactDepositRow
-										label="Network"
-										right={
-											<div className="text-right">
-												<div className="text-sm font-semibold text-foreground">
-													{PRIMARY_CHAIN_LABEL}
-												</div>
-												<div className="text-[11px] text-muted-foreground">
-													Robinhood Chain ready
-												</div>
-											</div>
-										}
-									/>
-									<CompactDepositRow
-										label="Destination"
-										right={
-											<span className="text-sm font-semibold text-foreground">
-												Shared vault
-											</span>
-										}
-									/>
-								</div>
-
-								<div className="grid gap-3 pt-1 sm:grid-cols-2">
+								<div className="grid gap-4 pt-2 sm:grid-cols-2">
 									<Button
 										variant="secondary"
-										className="h-12 rounded-full text-sm font-semibold"
+										className="h-14 rounded-full border border-white/6 bg-[#232021] text-lg font-medium text-white hover:bg-[#2b2829]"
 										onClick={() => setDepositAsset(null)}
 									>
 										Cancel
 									</Button>
 									<Button
-										className="h-12 rounded-full text-sm font-semibold"
+										className="h-14 rounded-full bg-white/38 text-lg font-medium text-black hover:bg-white/48"
 										onClick={confirmDeposit}
 										disabled={
+											isDepositing ||
 											(Number(depositAmount) || 0) <= 0 ||
-											(Number(depositAmount) || 0) > depositAsset.walletBalance
+											(depositAsset.walletBalance !== undefined &&
+												(Number(depositAmount) || 0) >
+													depositAsset.walletBalance) ||
+											!depositAsset.vaultAddress
 										}
 									>
-										Deposit
+										{isDepositing ? "Depositing..." : "Deposit"}
 									</Button>
 								</div>
 							</div>
@@ -1180,7 +1334,9 @@ export default function DepositPage() {
 						<DialogHeader>
 							<div className="flex items-center justify-between">
 								<DialogTitle className="text-[18px] font-semibold tracking-tight text-foreground">
-									Fund your account
+									{receiveVaultAsset
+										? `Fund ${receiveVaultAsset.symbol} vault`
+										: "Fund your account"}
 								</DialogTitle>
 								<DialogClose className="rounded-full p-1 text-muted-foreground transition-colors hover:text-foreground">
 									<X className="size-5" />
@@ -1200,7 +1356,8 @@ export default function DepositPage() {
 
 							<div className="mt-4 border-t border-border/60 px-2 pt-4 text-center">
 								<div className="break-all font-mono text-[11px] leading-relaxed text-muted-foreground">
-									0x8F4A4458BC8d2684A452C0C57531731410F3f4
+									{receiveVaultAsset?.vaultAddress ??
+										"No vault address configured for this network"}
 								</div>
 							</div>
 
@@ -1220,6 +1377,7 @@ export default function DepositPage() {
 							<Button
 								className="mt-5 h-11 w-full rounded-full text-sm font-semibold"
 								onClick={copyVaultAddress}
+								disabled={!receiveVaultAsset?.vaultAddress}
 							>
 								Copy Address
 							</Button>
@@ -1308,7 +1466,7 @@ function MetricTooltip({
 	);
 }
 
-function DepositPageSkeleton() {
+function DashboardPageSkeleton() {
 	return (
 		<div className="px-0 pb-12">
 			<div className="px-5 pt-8 md:px-8">
@@ -1414,10 +1572,7 @@ function DepositPageSkeleton() {
 								}}
 							>
 								{Array.from({ length: 7 }).map((_, index) => (
-									<Skeleton
-										key={index}
-										className="h-4 w-16 rounded-full"
-									/>
+									<Skeleton key={index} className="h-4 w-16 rounded-full" />
 								))}
 							</div>
 							<div className="divide-y divide-border/20">
@@ -1627,5 +1782,31 @@ function FilterButton({ label }: { label: string }) {
 			{label}
 			<ChevronDown data-icon="inline-end" className="text-muted-foreground" />
 		</Button>
+	);
+}
+
+function DepositModalRow({
+	label,
+	info,
+	last,
+	right,
+}: {
+	label: string;
+	info?: boolean;
+	last?: boolean;
+	right: React.ReactNode;
+}) {
+	return (
+		<div
+			className={`flex items-center justify-between gap-4 py-3 ${
+				!last ? "border-b border-white/10" : ""
+			}`}
+		>
+			<div className="flex items-center gap-2.5 text-[13px] text-white/58">
+				<span>{label}</span>
+				{info && <Info className="size-3" />}
+			</div>
+			<div className="shrink-0">{right}</div>
+		</div>
 	);
 }

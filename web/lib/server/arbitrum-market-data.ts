@@ -88,7 +88,7 @@ function stableFetch(input: string) {
 		next: { revalidate: 60 * 15 },
 		headers: {
 			accept: "application/json",
-			"user-agent": "YieldPilot/0.1",
+			"user-agent": "Kabon/0.1",
 		},
 	});
 }

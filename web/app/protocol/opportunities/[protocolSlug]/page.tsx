@@ -141,8 +141,13 @@ function OpportunityDetailPage() {
 							built from current protocol data.
 						</p>
 						<div className="mt-5 flex gap-3">
-							<Button onClick={() => opportunitiesQuery.refetch()}>Retry</Button>
-							<Button variant="outline" onClick={() => router.push("/dashboard")}>
+							<Button onClick={() => opportunitiesQuery.refetch()}>
+								Retry
+							</Button>
+							<Button
+								variant="outline"
+								onClick={() => router.push("/dashboard")}
+							>
 								Back to dashboard
 							</Button>
 						</div>
@@ -163,8 +168,8 @@ function OpportunityDetailPage() {
 						No live markets found
 					</h1>
 					<p className="mt-3 max-w-xl text-sm text-muted-foreground">
-						There isn&apos;t a live {asset ?? "asset"} market for {protocolSlug} in
-						the current registry response.
+						There isn&apos;t a live {asset ?? "asset"} market for {protocolSlug}{" "}
+						in the current registry response.
 					</p>
 					<div className="mt-5">
 						<Button variant="outline" onClick={() => router.push("/dashboard")}>
@@ -219,7 +224,9 @@ function OpportunityDetailPage() {
 					<div className="min-w-0">
 						<h1 className="font-display text-[36px] font-semibold tracking-tight sm:text-[48px]">
 							{primary.assetDisplayName}{" "}
-							<span className="text-muted-foreground">{primary.assetSymbol}</span>
+							<span className="text-muted-foreground">
+								{primary.assetSymbol}
+							</span>
 						</h1>
 						<p className="mt-1 text-[16px] text-muted-foreground">
 							Asset on {primary.chain} in {primary.protocolName}
@@ -617,8 +624,8 @@ function OpportunityDetailPage() {
 													className={cn(
 														"rounded-full px-2.5 py-1 text-xs font-semibold transition-colors",
 														selectedRange === range
-													    ? "bg-foreground/10 text-foreground"
-														: "text-muted-foreground hover:text-foreground",
+															? "bg-foreground/10 text-foreground"
+															: "text-muted-foreground hover:text-foreground",
 													)}
 												>
 													{range}
@@ -836,9 +843,10 @@ function buildSummary(opportunities: Opportunity[]) {
 	const withdrawEnabledCount = opportunities.filter(
 		(opportunity) => opportunity.canWithdraw,
 	).length;
-	const primaryLiquidityLabel = mostCommonBy(
-		opportunities.map((opportunity) => opportunity.liquidityLabel),
-	) ?? "Flexible";
+	const primaryLiquidityLabel =
+		mostCommonBy(
+			opportunities.map((opportunity) => opportunity.liquidityLabel),
+		) ?? "Flexible";
 	const primaryRisk =
 		opportunities.reduce<Opportunity | null>((current, opportunity) => {
 			if (!current) return opportunity;
@@ -870,8 +878,10 @@ function buildSeries(
 		points: CHART_MODIFIERS.map((modifier, pointIndex) => {
 			if (mode === "apy") {
 				return Number(
-					((opportunity.apyBase ?? opportunity.apy) * modifier +
-						(opportunity.apyReward ?? 0) * (0.9 + pointIndex * 0.01)).toFixed(2),
+					(
+						(opportunity.apyBase ?? opportunity.apy) * modifier +
+						(opportunity.apyReward ?? 0) * (0.9 + pointIndex * 0.01)
+					).toFixed(2),
 				);
 			}
 
@@ -1083,7 +1093,10 @@ function TableValue({
 function LegendChip({ color, label }: { color: string; label: string }) {
 	return (
 		<div className="flex items-center gap-2 text-muted-foreground">
-			<span className="size-2.5 rounded-full" style={{ backgroundColor: color }} />
+			<span
+				className="size-2.5 rounded-full"
+				style={{ backgroundColor: color }}
+			/>
 			<span>{label}</span>
 		</div>
 	);
@@ -1162,7 +1175,10 @@ function OpportunityDetailSkeleton() {
 				</div>
 
 				{Array.from({ length: 2 }).map((_, sectionIndex) => (
-					<div key={sectionIndex} className="mt-10 border-t border-border pt-10">
+					<div
+						key={sectionIndex}
+						className="mt-10 border-t border-border pt-10"
+					>
 						<div className="grid gap-10 lg:grid-cols-[360px_minmax(0,1fr)]">
 							<div>
 								<div className="h-8 w-32 rounded bg-muted" />

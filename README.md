@@ -1,6 +1,6 @@
-# YieldPilot
+# Kabon
 
-YieldPilot is a shared-vault DeFi product focused on making onchain yield allocation easier to use. Users deposit a supported asset into a vault, receive ERC-4626 vault shares as their receipt, and rely on the vault to handle strategy deployment and withdrawal unwinds behind the scenes.
+Kabon is a shared-vault DeFi product focused on making onchain yield allocation easier to use. Users deposit a supported asset into a vault, receive ERC-4626 vault shares as their receipt, and rely on the vault to handle strategy deployment and withdrawal unwinds behind the scenes.
 
 The product is Arbitrum-first today, with frontend wallet support expanded to include Robinhood Chain testnet so the app can speak credibly to tokenized asset and RWA workflows as that ecosystem opens up.
 
@@ -11,7 +11,7 @@ This repository contains two workspaces:
 
 ## Product Model
 
-YieldPilot is built around one vault per supported asset.
+Kabon is built around one vault per supported asset.
 
 At a high level:
 
@@ -94,7 +94,7 @@ This does not remove the need to review every production strategy adapter indepe
 
 This repository is a strong base for:
 
-- demonstrating the YieldPilot product model
+- demonstrating the Kabon product model
 - iterating on ERC-4626 vault behavior
 - building operator workflows around strategy deployment and unwind management
 - connecting a frontend to a vault-driven yield product

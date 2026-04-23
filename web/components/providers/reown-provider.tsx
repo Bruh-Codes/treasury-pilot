@@ -6,17 +6,14 @@ import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { WagmiProvider } from "wagmi";
 import { ensureReownAppKit, wagmiConfig } from "@/lib/reown";
 
-export function ReownProvider({
-	children,
-}: {
-	children: React.ReactNode;
-}) {
+export function ReownProvider({ children }: { children: React.ReactNode }) {
 	const [queryClient] = useState(
 		() =>
 			new QueryClient({
 				defaultOptions: {
 					queries: {
 						refetchOnReconnect: true,
+						refetchOnWindowFocus: false,
 					},
 				},
 			}),

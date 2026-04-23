@@ -2,7 +2,7 @@
 
 ## Product Name
 
-YieldPilot
+Kabon
 
 AI-assisted stablecoin treasury vault on Arbitrum.
 
@@ -538,9 +538,14 @@ This needs to feel polished and obvious.
 - [ ] landing page
 - [ ] policy setup flow
 - [ ] deposit flow
+- [ ] restrict deposit modal asset dropdown to assets with deployed vault support
+- [ ] add frontend vault registry keyed by chain and asset symbol
+- [ ] resolve selected deposit asset to token metadata and vault address internally
+- [ ] wire ERC-20 approve plus vault deposit for the selected asset
 - [ ] recommendation panel
 - [ ] allocation approval flow
 - [ ] withdrawal flow
+- [ ] wire withdraw UI to vault preview and execution methods for the selected asset vault
 - [ ] portfolio overview
 
 ### Phase 5: Demo Prep
@@ -584,5 +589,9 @@ That clarity is part of what will make this feel strong enough to win.
 
 - [x] Reown wallet support for Arbitrum One, Arbitrum Sepolia, and Robinhood Chain testnet
 - [x] product positioning now supports both DeFi treasury flows and a Robinhood Chain RWA expansion story
+- [ ] deposit modal selects supported asset first, then routes internally to the correct vault
+- [ ] placeholder vault address in deposit UI replaced with chain-aware vault registry config
+- [ ] live onchain deposit flow replaces the current presentation-only modal submit
+- [ ] withdraw page upgraded from placeholder state to asset-aware vault integration
 - [ ] Robinhood-native market opportunities folded into live APIs
 - [ ] Robinhood Chain-specific recommendation logic once reliable market coverage exists

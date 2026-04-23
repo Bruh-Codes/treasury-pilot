@@ -51,7 +51,7 @@ export const wagmiAdapter = new WagmiAdapter({
 export const wagmiConfig = wagmiAdapter.wagmiConfig;
 
 const metadata = {
-	name: "YieldPilot",
+	name: "Kabon",
 	description: "AI treasury copilot for deposits and withdrawals on Arbitrum",
 	url: "http://localhost:3000",
 	icons: ["http://localhost:3000/favicon.ico"],

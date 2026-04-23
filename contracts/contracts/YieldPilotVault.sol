@@ -31,16 +31,31 @@ contract YieldPilotVault is
 {
     using SafeERC20 for IERC20;
 
+    /// @notice Maximum unwind withdrawal fee the owner can configure, expressed in basis points.
+    uint16 public constant MAX_UNWIND_FEE_BPS = 1_000;
+
     // keccak256(abi.encode(uint256(keccak256("openzeppelin.storage.ReentrancyGuard")) - 1)) & ~bytes32(uint256(0xff))
     bytes32 private constant _REENTRANCY_GUARD_STORAGE =
         0x9b779b17422d0df92223018b32b4d1fa46e071723d6817e2486d003becc55f00;
     uint256 private constant _NOT_ENTERED = 1;
 
+    /// @notice Address that receives unwind withdrawal fees.
+    address public feeRecipient;
+    /// @notice Fee applied only to the portion of a withdrawal that requires strategy recalls.
+    uint16 public unwindFeeBps;
+
     error InsufficientLiquidity(uint256 requestedAssets, uint256 availableAssets);
+    error InvalidFeeRecipient(address recipient);
+    error UnwindFeeTooHigh(uint16 feeBps, uint16 maxFeeBps);
     error StrategyLossRequiresPause(address strategy, uint256 previousAssets, uint256 currentAssets);
     error UnexpectedAssetDelta(uint256 expectedAssets, uint256 actualAssets);
     error UnexpectedStrategyReportedAssets(address strategy, uint256 expectedAssets, uint256 actualAssets);
     error OwnershipRenounceDisabled();
+
+    /// @notice Emitted when the unwind withdrawal fee configuration changes.
+    /// @param feeRecipient Address that receives unwind withdrawal fees.
+    /// @param unwindFeeBps Fee applied only to the portion of a withdrawal that requires strategy recalls.
+    event WithdrawalFeeUpdated(address indexed feeRecipient, uint16 unwindFeeBps);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -59,6 +74,7 @@ contract YieldPilotVault is
         __Ownable2Step_init();
         __Pausable_init();
         StorageSlot.getUint256Slot(_REENTRANCY_GUARD_STORAGE).value = _NOT_ENTERED;
+        feeRecipient = owner_;
     }
 
     /// @notice Returns the implementation version string.
@@ -92,6 +108,35 @@ contract YieldPilotVault is
         uint256 idle = idleAssets();
         availableNow = requestedAssets < idle ? requestedAssets : idle;
         needsUnwind = requestedAssets > idle ? requestedAssets - idle : 0;
+    }
+
+    /// @notice Previews the unwind portion and fee for a requested withdrawal amount.
+    /// @param requestedAssets Net asset amount the user wants to receive.
+    /// @return availableNow Amount that can be settled from idle vault liquidity.
+    /// @return needsUnwind Amount that must be recalled from strategies.
+    /// @return feeAssets Additional asset fee charged on the unwind-required portion.
+    function previewWithdrawalFee(
+        uint256 requestedAssets
+    ) external view returns (uint256 availableNow, uint256 needsUnwind, uint256 feeAssets) {
+        uint256 idle = idleAssets();
+        (availableNow, needsUnwind, feeAssets) = _previewWithdrawalFee(requestedAssets, idle);
+    }
+
+    /// @notice Updates the fee recipient and unwind fee basis points.
+    /// @param feeRecipient_ Address that receives unwind withdrawal fees.
+    /// @param unwindFeeBps_ Fee applied only to the portion of a withdrawal that requires strategy recalls.
+    function setWithdrawalFee(address feeRecipient_, uint16 unwindFeeBps_) external onlyOwner {
+        if (feeRecipient_ == address(0)) {
+            revert InvalidFeeRecipient(feeRecipient_);
+        }
+        if (unwindFeeBps_ > MAX_UNWIND_FEE_BPS) {
+            revert UnwindFeeTooHigh(unwindFeeBps_, MAX_UNWIND_FEE_BPS);
+        }
+
+        feeRecipient = feeRecipient_;
+        unwindFeeBps = unwindFeeBps_;
+
+        emit WithdrawalFeeUpdated(feeRecipient_, unwindFeeBps_);
     }
 
     /// @notice Whitelists a strategy adapter for future allocations.
@@ -225,6 +270,28 @@ contract YieldPilotVault is
     }
 
     /// @inheritdoc ERC4626Upgradeable
+    function previewWithdraw(uint256 assets) public view override returns (uint256) {
+        uint256 feeAssets = _previewUnwindFee(assets, idleAssets());
+        return super.previewWithdraw(assets + feeAssets);
+    }
+
+    /// @inheritdoc ERC4626Upgradeable
+    function previewRedeem(uint256 shares) public view override returns (uint256) {
+        uint256 grossAssets = super.previewRedeem(shares);
+        uint256 idle = idleAssets();
+        if (grossAssets <= idle) {
+            return grossAssets;
+        }
+
+        uint256 feeBps = unwindFeeBps;
+        if (feeBps == 0) {
+            return grossAssets;
+        }
+
+        return ((grossAssets * 10_000) + (idle * feeBps)) / (10_000 + feeBps);
+    }
+
+    /// @inheritdoc ERC4626Upgradeable
     function deposit(uint256 assets, address receiver) public override nonReentrant returns (uint256) {
         return super.deposit(assets, receiver);
     }
@@ -257,8 +324,13 @@ contract YieldPilotVault is
         uint256 assets,
         uint256 shares
     ) internal override {
-        _ensureLiquidity(assets);
+        uint256 feeAssets = _previewUnwindFee(assets, idleAssets());
+        _ensureLiquidity(assets + feeAssets);
         super._withdraw(caller, receiver, owner, assets, shares);
+
+        if (feeAssets != 0) {
+            IERC20(asset()).safeTransfer(feeRecipient, feeAssets);
+        }
     }
 
     /// @dev Performs the ERC-4626 deposit flow while rejecting short-receipt tokens.
@@ -320,5 +392,40 @@ contract YieldPilotVault is
         }
 
         revert InsufficientLiquidity(assets, assets - remaining);
+    }
+
+    /// @notice Returns the unwind fee for a requested net withdrawal amount.
+    /// @param requestedAssets Net asset amount the user wants to receive.
+    /// @param idle Current vault idle assets available before any recall.
+    /// @return feeAssets Additional fee charged on the unwind-required portion.
+    function _previewUnwindFee(uint256 requestedAssets, uint256 idle) internal view returns (uint256 feeAssets) {
+        (, uint256 needsUnwind, ) = _previewWithdrawalFee(requestedAssets, idle);
+        uint256 feeBps = unwindFeeBps;
+        if (needsUnwind == 0 || feeBps == 0) {
+            return 0;
+        }
+
+        return (needsUnwind * feeBps) / 10_000;
+    }
+
+    /// @notice Returns the liquidity split and unwind fee for a requested withdrawal.
+    /// @param requestedAssets Net asset amount the user wants to receive.
+    /// @param idle Current vault idle assets available before any recall.
+    /// @return availableNow Amount that can be settled from idle vault liquidity.
+    /// @return needsUnwind Amount that must be recalled from strategies.
+    /// @return feeAssets Additional fee charged on the unwind-required portion.
+    function _previewWithdrawalFee(
+        uint256 requestedAssets,
+        uint256 idle
+    ) internal view returns (uint256 availableNow, uint256 needsUnwind, uint256 feeAssets) {
+        availableNow = requestedAssets < idle ? requestedAssets : idle;
+        needsUnwind = requestedAssets > idle ? requestedAssets - idle : 0;
+
+        uint256 feeBps = unwindFeeBps;
+        if (needsUnwind == 0 || feeBps == 0) {
+            return (availableNow, needsUnwind, 0);
+        }
+
+        feeAssets = (needsUnwind * feeBps) / 10_000;
     }
 }

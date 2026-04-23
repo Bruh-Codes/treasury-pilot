@@ -2,7 +2,7 @@
 pragma solidity ^0.8.28;
 
 /// @title Strategy Adapter Interface
-/// @notice Standard interface used by the shared YieldPilot vault to interact with
+/// @notice Standard interface used by the shared Kabon vault to interact with
 ///         whitelisted yield destinations.
 interface IStrategyAdapter {
     /// @notice Returns the asset managed by the strategy.
