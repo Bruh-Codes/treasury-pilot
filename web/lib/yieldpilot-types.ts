@@ -1,4 +1,4 @@
-export type RiskPreset = "conservative" | "balanced" | "yield";
+﻿export type RiskPreset = "conservative" | "balanced" | "yield";
 export type LiquidityPreset = "instant" | "weekly" | "flexible";
 export type AssetRegistryStatus = "discovered" | "reviewed" | "whitelisted";
 export type AssetRegistryType =
@@ -62,6 +62,12 @@ export type ProtocolRegistryEntry = {
   adapterAvailable: boolean;
 };
 
+export type HistoricalPoint = {
+  timestamp: string;
+  apy: number;
+  tvlUsd: number;
+};
+
 export type Opportunity = {
   id: string;
   protocolId: string;
@@ -77,6 +83,7 @@ export type Opportunity = {
   stablecoin: boolean;
   chain: string;
   pool: string;
+  poolSymbol: string;
   poolMeta?: string | null;
   liquidityLabel: StrategyLiquidity;
   liquidityScore: number;
@@ -88,6 +95,29 @@ export type Opportunity = {
   canDeposit: boolean;
   canWithdraw: boolean;
   description: string;
+  history?: HistoricalPoint[];
+};
+
+export type MarketSummary = {
+  totalTvlUsd: number;
+  averageApy: number;
+  withdrawableTvlUsd: number;
+  instantLiquidityUsd: number;
+  instantVenueCount: number;
+  adapterReadyCount: number;
+  withdrawEnabledCount: number;
+  primaryLiquidityLabel: string;
+  primaryRisk: string;
+};
+
+export type OpportunitiesResponse = {
+  opportunities: Opportunity[];
+  total: number;
+  page: number;
+  pageSize: number;
+  summary: MarketSummary;
+  topOpportunities: Opportunity[];
+  generatedAt: string;
 };
 
 export type AssetMarketSummary = {

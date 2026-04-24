@@ -90,6 +90,13 @@ function ProtocolPage() {
 		);
 	}
 
+	if (
+		(protocolQuery.isPending && protocolQuery.data === undefined) ||
+		(opportunityQuery.isPending && opportunityQuery.data === undefined)
+	) {
+		return <ProtocolPageSkeleton />;
+	}
+
 	return (
 		<div className="px-6 py-8 md:px-7 md:py-9">
 			<PageHeader
@@ -311,6 +318,78 @@ function SummaryRow({
 				<span>{label}</span>
 			</div>
 			<span className="font-mono text-sm">{value}</span>
+		</div>
+	);
+}
+
+function ProtocolPageSkeleton() {
+	return (
+		<div className="px-6 py-8 md:px-7 md:py-9">
+			<div className="animate-pulse">
+				<div className="h-9 w-64 rounded bg-muted" />
+				<div className="mt-2 h-4 w-96 rounded bg-muted" />
+
+				<div className="mt-7 grid grid-cols-2 overflow-hidden rounded-[20px] border border-border md:grid-cols-4">
+					{Array.from({ length: 4 }).map((_, index) => (
+						<div key={index} className="p-4 border-r border-border last:border-r-0">
+							<div className="h-3 w-20 rounded bg-muted" />
+							<div className="mt-4 h-8 w-32 rounded bg-muted" />
+						</div>
+					))}
+				</div>
+
+				<div className="mt-5 grid gap-4 lg:grid-cols-[1fr_300px]">
+					<div className="rounded-[24px] border border-border bg-card p-6">
+						<div className="flex items-center justify-between mb-6">
+							<div>
+								<div className="h-6 w-48 rounded bg-muted" />
+								<div className="mt-2 h-3 w-64 rounded bg-muted" />
+							</div>
+						</div>
+
+						<div className="overflow-hidden rounded-[18px] border border-border">
+							<div className="h-10 border-b border-border bg-muted/20" />
+							<div className="divide-y divide-border">
+								{Array.from({ length: 8 }).map((_, i) => (
+									<div key={i} className="grid grid-cols-12 gap-4 px-4 py-3.5">
+										<div className="col-span-4 flex items-center gap-3">
+											<div className="size-9 rounded-full bg-muted" />
+											<div className="space-y-2">
+												<div className="h-4 w-24 rounded bg-muted" />
+												<div className="h-3 w-16 rounded bg-muted" />
+											</div>
+										</div>
+										<div className="col-span-2 flex justify-end items-center">
+											<div className="h-4 w-12 rounded bg-muted" />
+										</div>
+										<div className="col-span-2 flex justify-end items-center">
+											<div className="h-4 w-12 rounded bg-muted" />
+										</div>
+										<div className="col-span-2 flex justify-end items-center">
+											<div className="h-4 w-16 rounded bg-muted" />
+										</div>
+										<div className="col-span-2 flex justify-end items-center">
+											<div className="h-3 w-14 rounded bg-muted" />
+										</div>
+									</div>
+								))}
+							</div>
+						</div>
+					</div>
+
+					<div className="rounded-[24px] border border-border bg-card p-6 h-fit">
+						<div className="h-5 w-32 rounded bg-muted mb-6" />
+						<div className="space-y-4">
+							{Array.from({ length: 4 }).map((_, i) => (
+								<div key={i} className="flex justify-between">
+									<div className="h-4 w-24 rounded bg-muted" />
+									<div className="h-4 w-12 rounded bg-muted" />
+								</div>
+							))}
+						</div>
+					</div>
+				</div>
+			</div>
 		</div>
 	);
 }

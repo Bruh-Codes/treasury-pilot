@@ -57,7 +57,7 @@ export function AppSidebar() {
 					href="/"
 					className="flex items-center gap-2.5 group-data-[collapsible=icon]:justify-center"
 				>
-					<Image alt="kabon" height={30} src={Kabon} />
+					<Image className="grayscale" alt="kabon" height={30} src={Kabon} />
 				</Link>
 			</SidebarHeader>
 

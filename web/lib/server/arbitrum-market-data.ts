@@ -38,6 +38,31 @@ type DefiLlamaPool = {
 	ilRisk?: string | null;
 };
 
+type DefiLlamaPoolChart = {
+	status: string;
+	data: Array<{
+		timestamp: string;
+		tvlUsd: number;
+		apy: number;
+		apyBase?: number;
+		apyReward?: number;
+	}>;
+};
+
+async function fetchPoolChart(
+	poolId: string,
+): Promise<DefiLlamaPoolChart | null> {
+	try {
+		const response = await fetch("https://yields.llama.fi/chart/" + poolId, {
+			next: { revalidate: 60 * 60 }, // Cache for 1 hour
+		});
+		if (!response.ok) return null;
+		return await response.json();
+	} catch {
+		return null;
+	}
+}
+
 const ARBITRUM_CHAIN_NAME = "Arbitrum";
 const EXECUTABLE_PROJECT_ALLOWLIST = new Set([
 	"aave-v3",
@@ -83,32 +108,48 @@ const ICON_MAP: Record<string, string> = {
 	USDE: "https://assets.coingecko.com/coins/images/33613/large/usde.png",
 };
 
-function stableFetch(input: string) {
-	return fetch(input, {
-		next: { revalidate: 60 * 15 },
+let protocolsCache: { data: DefiLlamaProtocol[]; timestamp: number } | null = null;
+let poolsCache: { data: DefiLlamaPool[]; timestamp: number } | null = null;
+const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
+
+async function fetchProtocols(): Promise<DefiLlamaProtocol[]> {
+	if (protocolsCache && Date.now() - protocolsCache.timestamp < CACHE_TTL) {
+		return protocolsCache.data;
+	}
+
+	const response = await fetch("https://api.llama.fi/protocols", {
+		cache: "no-store",
 		headers: {
 			accept: "application/json",
 			"user-agent": "Kabon/0.1",
 		},
 	});
-}
-
-async function fetchProtocols(): Promise<DefiLlamaProtocol[]> {
-	const response = await stableFetch("https://api.llama.fi/protocols");
 	if (!response.ok) {
-		throw new Error(`Failed to fetch protocols: ${response.status}`);
+		throw new Error("Failed to fetch protocols: " + response.status);
 	}
 
 	const data = (await response.json()) as DefiLlamaProtocol[];
-	return Array.isArray(data) ? data : [];
+	const result = Array.isArray(data) ? data : [];
+	protocolsCache = { data: result, timestamp: Date.now() };
+	return result;
 }
 
 async function fetchPools(): Promise<DefiLlamaPool[]> {
+	if (poolsCache && Date.now() - poolsCache.timestamp < CACHE_TTL) {
+		return poolsCache.data;
+	}
+
 	const urls = ["https://yields.llama.fi/pools", "https://api.llama.fi/pools"];
 
 	for (const url of urls) {
 		try {
-			const response = await stableFetch(url);
+			const response = await fetch(url, {
+				cache: "no-store",
+				headers: {
+					accept: "application/json",
+					"user-agent": "Kabon/0.1",
+				},
+			});
 			if (!response.ok) {
 				continue;
 			}
@@ -117,12 +158,16 @@ async function fetchPools(): Promise<DefiLlamaPool[]> {
 				| { data?: DefiLlamaPool[] }
 				| DefiLlamaPool[];
 
+			let result: DefiLlamaPool[] = [];
 			if (Array.isArray(data)) {
-				return data;
+				result = data;
+			} else if (data && Array.isArray(data.data)) {
+				result = data.data;
 			}
 
-			if (Array.isArray(data.data)) {
-				return data.data;
+			if (result.length > 0) {
+				poolsCache = { data: result, timestamp: Date.now() };
+				return result;
 			}
 		} catch {
 			continue;
@@ -151,8 +196,13 @@ function normalizeAssetSymbol(symbol: string) {
 }
 
 function getLiquidityLabel(pool: DefiLlamaPool): StrategyLiquidity {
-	const meta =
-		`${pool.poolMeta ?? ""} ${pool.exposure ?? ""} ${pool.ilRisk ?? ""}`.toLowerCase();
+	const meta = (
+		(pool.poolMeta ?? "") +
+		" " +
+		(pool.exposure ?? "") +
+		" " +
+		(pool.ilRisk ?? "")
+	).toLowerCase();
 	if (
 		meta.includes("7 day") ||
 		meta.includes("7-day") ||
@@ -194,8 +244,13 @@ function inferRisk(
 	pool: DefiLlamaPool,
 ): { risk: StrategyRisk; riskScore: number } {
 	const normalizedCategory = category.toLowerCase();
-	const meta =
-		`${pool.poolMeta ?? ""} ${pool.exposure ?? ""} ${pool.ilRisk ?? ""}`.toLowerCase();
+	const meta = (
+		(pool.poolMeta ?? "") +
+		" " +
+		(pool.exposure ?? "") +
+		" " +
+		(pool.ilRisk ?? "")
+	).toLowerCase();
 
 	if (
 		normalizedCategory.includes("lend") ||
@@ -235,13 +290,13 @@ function buildDescription(
 	liquidity: StrategyLiquidity,
 ) {
 	const bits = [
-		`${pool.project} on Arbitrum`,
-		pool.symbol ? `for ${normalizeAssetSymbol(pool.symbol)}` : undefined,
-		category ? `in ${category}` : undefined,
-		`with ${liquidity.toLowerCase()} withdrawals`,
+		pool.project + " on Arbitrum",
+		pool.symbol ? "for " + normalizeAssetSymbol(pool.symbol) : undefined,
+		category ? "in " + category : undefined,
+		"with " + liquidity.toLowerCase() + " withdrawals",
 	].filter(Boolean);
 
-	return `${bits.join(" ")}.`.replace(/\s+/g, " ");
+	return bits.join(" ") + ".";
 }
 
 async function getMarketInputs() {
@@ -268,15 +323,80 @@ async function getMarketInputs() {
 	return { protocolMap, pools };
 }
 
+export function buildMarketSummary(opportunities: Opportunity[]) {
+	const totalTvlUsd = opportunities.reduce(
+		(sum, opportunity) => sum + opportunity.tvlUsd,
+		0,
+	);
+	const averageApy =
+		opportunities.length > 0
+			? opportunities.reduce((sum, opportunity) => sum + opportunity.apy, 0) /
+				opportunities.length
+			: 0;
+	const withdrawableTvlUsd = opportunities
+		.filter((opportunity) => opportunity.canWithdraw)
+		.reduce((sum, opportunity) => sum + opportunity.tvlUsd, 0);
+	const instantLiquidityUsd = opportunities
+		.filter((opportunity) => opportunity.liquidityLabel === "Instant")
+		.reduce((sum, opportunity) => sum + opportunity.tvlUsd, 0);
+	const instantVenueCount = opportunities.filter(
+		(opportunity) => opportunity.liquidityLabel === "Instant",
+	).length;
+	const adapterReadyCount = opportunities.filter(
+		(opportunity) => opportunity.adapterAvailable,
+	).length;
+	const withdrawEnabledCount = opportunities.filter(
+		(opportunity) => opportunity.canWithdraw,
+	).length;
+
+	// Most common liquidity label
+	const counts = new Map<string, number>();
+	for (const op of opportunities) {
+		counts.set(op.liquidityLabel, (counts.get(op.liquidityLabel) ?? 0) + 1);
+	}
+	let primaryLiquidityLabel = "Flexible";
+	let maxCount = -1;
+	for (const [label, count] of counts.entries()) {
+		if (count > maxCount) {
+			primaryLiquidityLabel = label;
+			maxCount = count;
+		}
+	}
+
+	const primaryRisk =
+		opportunities.reduce<Opportunity | null>((current, opportunity) => {
+			if (!current) return opportunity;
+			return opportunity.riskScore > current.riskScore ? opportunity : current;
+		}, null)?.risk ?? "Medium";
+
+	return {
+		totalTvlUsd,
+		averageApy,
+		withdrawableTvlUsd,
+		instantLiquidityUsd,
+		instantVenueCount,
+		adapterReadyCount,
+		withdrawEnabledCount,
+		primaryLiquidityLabel,
+		primaryRisk,
+	};
+}
+
 export async function getArbitrumOpportunities(
 	assetSymbol?: string,
-): Promise<Opportunity[]> {
+	options: { protocol?: string; page?: number; pageSize?: number; range?: string } = {},
+): Promise<{
+	opportunities: Opportunity[];
+	summary: ReturnType<typeof buildMarketSummary>;
+	total: number;
+	topOpportunities: Opportunity[];
+}> {
 	const { protocolMap, pools } = await getMarketInputs();
 	const normalizedAsset = assetSymbol
 		? normalizeAssetSymbol(assetSymbol)
 		: undefined;
 
-	return pools
+	const allOpportunities = pools
 		.filter((pool) => pool.chain === ARBITRUM_CHAIN_NAME)
 		.filter(
 			(pool) =>
@@ -292,7 +412,7 @@ export async function getArbitrumOpportunities(
 			const protocolSlug = protocol?.slug ?? protocolKey;
 
 			return {
-				id: pool.pool ?? `${protocolSlug}-${asset}`,
+				id: pool.pool ?? protocolSlug + "-" + asset,
 				protocolId: protocolSlug,
 				protocolName: protocol?.name ?? pool.project!,
 				protocolSlug,
@@ -306,6 +426,7 @@ export async function getArbitrumOpportunities(
 				stablecoin: Boolean(pool.stablecoin),
 				chain: ARBITRUM_CHAIN_NAME,
 				pool: pool.pool ?? protocolSlug,
+				poolSymbol: pool.symbol ?? asset,
 				poolMeta: pool.poolMeta ?? null,
 				liquidityLabel,
 				liquidityScore: getLiquidityScore(liquidityLabel),
@@ -324,14 +445,92 @@ export async function getArbitrumOpportunities(
 			(opportunity) =>
 				!normalizedAsset || opportunity.assetSymbol === normalizedAsset,
 		)
-		.sort((a, b) => b.tvlUsd - a.tvlUsd || b.apy - a.apy)
-		.slice(0, 250);
+		.filter(
+			(opportunity) =>
+				!options.protocol ||
+				opportunity.protocolSlug === options.protocol ||
+				opportunity.protocolName.toLowerCase() === options.protocol.toLowerCase(),
+		)
+		.sort((a, b) => b.tvlUsd - a.tvlUsd || b.apy - a.apy);
+
+	const summary = buildMarketSummary(allOpportunities);
+	const total = allOpportunities.length;
+
+	// Fetch historical data for more opportunities to find the best performers in the selected range
+	const candidatesForTop = allOpportunities.slice(0, 10); // Get more candidates
+	const chartResults = await Promise.all(
+		candidatesForTop.map((op) => fetchPoolChart(op.pool)),
+	);
+
+	// Filter and rank opportunities based on their performance in the selected range
+	const opportunitiesWithHistory = candidatesForTop.map((op, index) => {
+		const chart = chartResults[index];
+		if (!chart || !chart.data) return op;
+
+		// Filter data based on range
+		let history = chart.data;
+		const now = new Date();
+		if (options.range === "1D") {
+			const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+			history = history.filter((p) => new Date(p.timestamp) >= dayAgo);
+		} else if (options.range === "1W") {
+			const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+			history = history.filter((p) => new Date(p.timestamp) >= weekAgo);
+		} else if (options.range === "1M") {
+			const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+			history = history.filter((p) => new Date(p.timestamp) >= monthAgo);
+		} else if (options.range === "1Y") {
+			const yearAgo = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+			history = history.filter((p) => new Date(p.timestamp) >= yearAgo);
+		}
+		// For "All" range, use all available data (no filtering)
+
+		const rangeAverageApy =
+			history.length > 0
+				? history.reduce((sum, p) => sum + p.apy, 0) / history.length
+				: op.apy;
+
+		return {
+			...op,
+			history: history.map((p) => ({
+				timestamp: p.timestamp,
+				apy: p.apy,
+				tvlUsd: p.tvlUsd,
+			})),
+			rangeAverageApy,
+		} as Opportunity & { rangeAverageApy: number };
+	});
+
+	// Sort by average APY in the selected range and take top 3
+	let topOpportunities = opportunitiesWithHistory
+		.sort((a, b) => {
+			const aRangeApy = "rangeAverageApy" in a ? a.rangeAverageApy : a.apy;
+			const bRangeApy = "rangeAverageApy" in b ? b.rangeAverageApy : b.apy;
+			return bRangeApy - aRangeApy;
+		})
+		.slice(0, 3);
+
+	let opportunities = allOpportunities;
+	if (options.page && options.pageSize) {
+		const start = (options.page - 1) * options.pageSize;
+		opportunities = allOpportunities.slice(start, start + options.pageSize);
+	} else {
+		opportunities = allOpportunities.slice(0, 250);
+	}
+
+	return {
+		opportunities,
+		summary,
+		total,
+		topOpportunities,
+	};
 }
 
 export async function getArbitrumProtocolRegistry(
 	assetSymbol?: string,
 ): Promise<ProtocolRegistryEntry[]> {
-	const opportunities = await getArbitrumOpportunities(assetSymbol);
+	const result = await getArbitrumOpportunities(assetSymbol);
+	const opportunities = result.opportunities;
 	const grouped = new Map<string, Opportunity[]>();
 
 	for (const opportunity of opportunities) {
@@ -385,7 +584,8 @@ export async function getArbitrumProtocolRegistry(
 export async function getArbitrumAssetSummaries(): Promise<
 	AssetMarketSummary[]
 > {
-	const opportunities = await getArbitrumOpportunities();
+	const result = await getArbitrumOpportunities();
+	const opportunities = result.opportunities;
 	const grouped = new Map<string, Opportunity[]>();
 
 	for (const opportunity of opportunities) {
@@ -427,7 +627,10 @@ function buildIdleStrategy(assetSymbol: string): StrategySnapshot {
 		liquidity: "Instant",
 		risk: "Low",
 		riskScore: 1,
-		description: `Unallocated ${assetSymbol} held in the vault for immediate withdrawals.`,
+		description:
+			"Unallocated " +
+			assetSymbol +
+			" held in the vault for immediate withdrawals.",
 		adapterAvailable: true,
 	};
 }
@@ -468,7 +671,8 @@ export async function buildRecommendation(input: {
 	allowedProtocols?: string[];
 }): Promise<Recommendation> {
 	const normalizedAsset = normalizeAssetSymbol(input.assetSymbol);
-	const opportunities = (await getArbitrumOpportunities(normalizedAsset))
+	const result = await getArbitrumOpportunities(normalizedAsset);
+	const opportunities = result.opportunities
 		.filter((opportunity) => opportunity.adapterAvailable)
 		.filter((opportunity) => applyLiquidityFilter(opportunity, input.liquidity))
 		.filter((opportunity) =>
@@ -485,7 +689,12 @@ export async function buildRecommendation(input: {
 			allocations: [{ strategyId: idle.id, percent: 1, strategy: idle }],
 			expectedApy: 0,
 			riskScore: 1,
-			rationale: `No eligible live Arbitrum opportunities matched the ${LIQUIDITY_PRESETS[input.liquidity].label.toLowerCase()} liquidity policy for ${normalizedAsset}, so the recommendation keeps capital idle in the vault.`,
+			rationale:
+				"No eligible live Arbitrum opportunities matched the " +
+				LIQUIDITY_PRESETS[input.liquidity].label.toLowerCase() +
+				" liquidity policy for " +
+				normalizedAsset +
+				", so the recommendation keeps capital idle in the vault.",
 			warnings: [
 				"No live opportunities matched the current asset and liquidity filter.",
 			],
@@ -517,7 +726,7 @@ export async function buildRecommendation(input: {
 			const strategy: StrategySnapshot = {
 				id: opportunity.id,
 				name: opportunity.protocolName,
-				protocol: `${opportunity.protocolName} · ${opportunity.assetSymbol}`,
+				protocol: opportunity.protocolName + " · " + opportunity.assetSymbol,
 				asset: opportunity.assetSymbol,
 				apy: opportunity.apy,
 				liquidity: opportunity.liquidityLabel,
@@ -568,7 +777,16 @@ export async function buildRecommendation(input: {
 		allocations,
 		expectedApy,
 		riskScore,
-		rationale: `For a ${preset.label.toLowerCase()} policy and ${LIQUIDITY_PRESETS[input.liquidity].label.toLowerCase()} withdrawals, ${(preset.idle * 100).toFixed(0)}% stays idle in the vault while the remainder is distributed across ${ranked.map((item) => item.protocolName).join(", ")} using live Arbitrum yield and liquidity data.`,
+		rationale:
+			"For a " +
+			preset.label.toLowerCase() +
+			" policy and " +
+			LIQUIDITY_PRESETS[input.liquidity].label.toLowerCase() +
+			" withdrawals, " +
+			(preset.idle * 100).toFixed(0) +
+			"% stays idle in the vault while the remainder is distributed across " +
+			ranked.map((item) => item.protocolName).join(", ") +
+			" using live Arbitrum yield and liquidity data.",
 		warnings,
 		protocolUniverseCount: opportunities.length,
 		generatedAt: new Date().toISOString(),

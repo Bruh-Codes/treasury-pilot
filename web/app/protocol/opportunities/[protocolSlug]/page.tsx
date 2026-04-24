@@ -7,11 +7,8 @@ import {
 	ArrowLeft,
 	ArrowUpRight,
 	BadgeInfo,
-	ChartColumn,
-	Clock3,
-	Droplets,
 	Info,
-	ShieldCheck,
+	Loader2,
 	Wallet,
 } from "lucide-react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
@@ -48,13 +45,11 @@ import type {
 import { cn } from "@/lib/utils";
 import { formatUsd } from "@/lib/yieldpilot-data";
 
-type RangeKey = "1D" | "1W" | "1M" | "6M" | "1Y" | "All";
+type RangeKey = "1W" | "1M" | "1Y" | "All";
 
-const RANGE_OPTIONS: RangeKey[] = ["1D", "1W", "1M", "6M", "1Y", "All"];
-const CHART_MODIFIERS = [0.97, 0.965, 0.968, 0.975, 0.99, 1.02, 1] as const;
+const RANGE_OPTIONS: RangeKey[] = ["1W", "1M", "1Y", "All"];
 const DEPOSIT_COLORS = ["#8b7eff", "#d38cf5", "#5ec6ff"] as const;
 const WITHDRAW_COLORS = ["#76c8ff", "#8b7eff", "#4ecdc4"] as const;
-const CHART_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 
 function OpportunityDetailPage() {
 	const router = useRouter();
@@ -72,36 +67,79 @@ function OpportunityDetailPage() {
 	);
 	const asset = searchParams.get("asset") ?? undefined;
 
-	const opportunitiesQuery = useOpportunities(asset, protocolSlug);
+	const currentPage = activeTab === "deposit" ? depositPage : withdrawPage;
+	const opportunitiesQuery = useOpportunities(
+		asset,
+		protocolSlug,
+		currentPage,
+		itemsPerPage,
+		selectedRange,
+	);
+
+	const isFetchingNewRange =
+		opportunitiesQuery.isFetching && opportunitiesQuery.isPlaceholderData;
+
 	const opportunities = opportunitiesQuery.data?.opportunities ?? [];
-	const primary = opportunities[0] ?? null;
+	const summary = opportunitiesQuery.data?.summary ?? {
+		totalTvlUsd: 0,
+		averageApy: 0,
+		withdrawableTvlUsd: 0,
+		instantLiquidityUsd: 0,
+		instantVenueCount: 0,
+		adapterReadyCount: 0,
+		withdrawEnabledCount: 0,
+		primaryLiquidityLabel: "Flexible",
+		primaryRisk: "Medium",
+	};
+	const topOpportunities = opportunitiesQuery.data?.topOpportunities ?? [];
+	const totalItems = opportunitiesQuery.data?.total ?? 0;
+	const totalPages = Math.ceil(totalItems / itemsPerPage);
 
-	const paginatedDepositOpportunities = useMemo(() => {
-		const start = (depositPage - 1) * itemsPerPage;
-		return opportunities.slice(start, start + itemsPerPage);
-	}, [opportunities, depositPage]);
-
-	const paginatedWithdrawOpportunities = useMemo(() => {
-		const start = (withdrawPage - 1) * itemsPerPage;
-		return opportunities.slice(start, start + itemsPerPage);
-	}, [opportunities, withdrawPage]);
-
-	const totalPages = Math.ceil(opportunities.length / itemsPerPage);
+	const primary = topOpportunities[0] ?? opportunities[0] ?? null;
 
 	const handleTabChange = (value: string) => {
 		setActiveTab(value as "deposit" | "withdraw");
-		setDepositPage(1);
-		setWithdrawPage(1);
 	};
 
-	const summary = useMemo(() => buildSummary(opportunities), [opportunities]);
-	const depositChartSeries = useMemo(
-		() => buildSeries(opportunities, DEPOSIT_COLORS, "apy"),
+	// Filter opportunities for charts consistency
+	const topDepositOpportunities = useMemo(
+		() => topOpportunities.filter((opp) => opp.canDeposit),
+		[topOpportunities],
+	);
+	const topWithdrawOpportunities = useMemo(
+		() => topOpportunities.filter((opp) => opp.canWithdraw),
+		[topOpportunities],
+	);
+
+	// Filter opportunities for tables
+	const depositOpportunities = useMemo(
+		() => opportunities.filter((opp) => opp.canDeposit),
 		[opportunities],
 	);
-	const withdrawChartSeries = useMemo(
-		() => buildSeries(opportunities, WITHDRAW_COLORS, "liquidity"),
+	const withdrawOpportunities = useMemo(
+		() => opportunities.filter((opp) => opp.canWithdraw),
 		[opportunities],
+	);
+
+	const depositChartSeries = useMemo(
+		() =>
+			buildSeries(
+				topDepositOpportunities,
+				DEPOSIT_COLORS,
+				"apy",
+				selectedRange,
+			),
+		[topDepositOpportunities, selectedRange],
+	);
+	const withdrawChartSeries = useMemo(
+		() =>
+			buildSeries(
+				topWithdrawOpportunities,
+				WITHDRAW_COLORS,
+				"liquidity",
+				selectedRange,
+			),
+		[topWithdrawOpportunities, selectedRange],
 	);
 	const depositChartConfig = useMemo(
 		() => buildChartConfig(depositChartSeries),
@@ -112,12 +150,12 @@ function OpportunityDetailPage() {
 		[withdrawChartSeries],
 	);
 	const depositChartData = useMemo(
-		() => buildChartData(depositChartSeries),
-		[depositChartSeries],
+		() => buildChartData(depositChartSeries, selectedRange),
+		[depositChartSeries, selectedRange],
 	);
 	const withdrawChartData = useMemo(
-		() => buildChartData(withdrawChartSeries),
-		[withdrawChartSeries],
+		() => buildChartData(withdrawChartSeries, selectedRange),
+		[withdrawChartSeries, selectedRange],
 	);
 	const notice = buildNotice(opportunities, primary?.adapterAvailable ?? false);
 
@@ -205,16 +243,13 @@ function OpportunityDetailPage() {
 							<Button variant="outline" asChild>
 								<a href={primary.url} target="_blank" rel="noreferrer">
 									<ArrowUpRight className="h-4 w-4" />
-									Open protocol
+									Visit protocol
 								</a>
 							</Button>
 						) : null}
 					</div>
 				</div>
 
-				<div className="font-mono text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
-					Opportunity
-				</div>
 				<div className="mt-4 flex items-center gap-4">
 					<img
 						src={primary.logo ?? "/favicon.ico"}
@@ -286,7 +321,10 @@ function OpportunityDetailPage() {
 						</TabsTrigger>
 					</TabsList>
 
-					<TabsContent value="deposit" className="mt-10 space-y-10 focus-visible:outline-none">
+					<TabsContent
+						value="deposit"
+						className="mt-10 space-y-10 focus-visible:outline-none"
+					>
 						<section>
 							<div className="grid gap-10 lg:grid-cols-[360px_minmax(0,1fr)] lg:items-start">
 								<div>
@@ -345,7 +383,7 @@ function OpportunityDetailPage() {
 												Live rate curve
 											</p>
 											<p className="mt-1 text-xs text-muted-foreground/75">
-												Current venue rates visualized from the active market set.
+												Current venue rates visualized from the top 3 markets.
 											</p>
 										</div>
 										<div className="flex items-center gap-1">
@@ -368,71 +406,85 @@ function OpportunityDetailPage() {
 									</div>
 
 									<div className="mt-4">
-										<ChartContainer
-											config={depositChartConfig}
-											className="min-h-[300px] w-full"
-										>
-											<LineChart
-												accessibilityLayer
-												data={depositChartData}
-												margin={{ left: 4, right: 10, top: 8, bottom: 8 }}
+										<div className="relative">
+											{isFetchingNewRange && (
+												<div className="absolute inset-0 z-50 flex items-center justify-center rounded-[22px] bg-background/80 backdrop-blur-sm">
+													<div className="flex flex-col items-center gap-2">
+														<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+														<span className="text-sm text-muted-foreground">
+															Updating chart data...
+														</span>
+													</div>
+												</div>
+											)}
+											<ChartContainer
+												config={depositChartConfig}
+												className="min-h-[300px] w-full"
 											>
-												<CartesianGrid
-													vertical={false}
-													stroke="rgba(255,255,255,0.06)"
-												/>
-												<XAxis
-													dataKey="label"
-													axisLine={false}
-													tickLine={false}
-													tickMargin={10}
-													tick={{
-														fill: "rgba(255,255,255,0.46)",
-														fontSize: 11,
-													}}
-												/>
-												<YAxis hide domain={["dataMin - 1", "dataMax + 1"]} />
-												<ChartTooltip
-													cursor={false}
-													trigger="hover"
-													isAnimationActive={false}
-													wrapperStyle={{ zIndex: 40, pointerEvents: "none" }}
-													content={
-														<ChartTooltipContent
-															indicator="dot"
-															labelFormatter={(label) => (
-																<span className="text-foreground">{label}</span>
-															)}
-															formatter={(value, name) => (
-																<div className="flex w-full items-center justify-between gap-3">
-																	<span className="text-muted-foreground">
-																		{
-																			depositChartConfig[
-																				name as keyof typeof depositChartConfig
-																			]?.label
-																		}
-																	</span>
-																	<span className="font-medium text-foreground">
-																		{Number(value).toFixed(2)}%
-																	</span>
-																</div>
-															)}
-														/>
-													}
-												/>
-												{depositChartSeries.map((series) => (
-													<Line
-														key={series.key}
-														type="monotone"
-														dataKey={series.key}
-														stroke={series.color}
-														strokeWidth={2.15}
-														dot={false}
-														activeDot={{ r: 4, fill: series.color }}
+												<LineChart
+													accessibilityLayer
+													data={depositChartData}
+													margin={{ left: 4, right: 10, top: 8, bottom: 8 }}
+												>
+													<CartesianGrid
+														vertical={false}
+														stroke="rgba(255,255,255,0.06)"
 													/>
-												))}
-											</LineChart>
-										</ChartContainer>
+													<XAxis
+														dataKey="label"
+														axisLine={false}
+														tickLine={false}
+														tickMargin={10}
+														tick={{
+															fill: "rgba(255,255,255,0.46)",
+															fontSize: 11,
+														}}
+													/>
+													<YAxis hide domain={["dataMin - 1", "dataMax + 1"]} />
+													<ChartTooltip
+														cursor={false}
+														trigger="hover"
+														isAnimationActive={false}
+														wrapperStyle={{ zIndex: 40, pointerEvents: "none" }}
+														content={
+															<ChartTooltipContent
+																indicator="dot"
+																labelFormatter={(label) => (
+																	<span className="text-foreground">
+																		{label}
+																	</span>
+																)}
+																formatter={(value, name) => (
+																	<div className="flex w-full items-center justify-between gap-3">
+																		<span className="text-muted-foreground">
+																			{
+																				depositChartConfig[
+																					name as keyof typeof depositChartConfig
+																				]?.label
+																			}
+																		</span>
+																		<span className="font-medium text-foreground">
+																			{Number(value).toFixed(2)}%
+																		</span>
+																	</div>
+																)}
+															/>
+														}
+													/>
+													{depositChartSeries.map((series) => (
+														<Line
+															key={series.key}
+															type="monotone"
+															dataKey={series.key}
+															stroke={series.color}
+															strokeWidth={2.15}
+															dot={false}
+															activeDot={{ r: 4, fill: series.color }}
+														/>
+													))}
+												</LineChart>
+											</ChartContainer>
+										</div>
 										<div className="flex flex-wrap items-center gap-4 border-t border-border/70 px-1 pt-4 text-sm">
 											{depositChartSeries.map((series) => (
 												<LegendChip
@@ -458,7 +510,7 @@ function OpportunityDetailPage() {
 									<span className="text-right">Withdrawals</span>
 								</div>
 								<div className="divide-y divide-border">
-									{paginatedDepositOpportunities.map((opportunity, index) => (
+									{depositOpportunities.map((opportunity, index) => (
 										<div
 											key={opportunity.id}
 											className="grid grid-cols-[1.5fr_0.9fr_1fr_1fr_1fr_1fr] gap-4 px-6 py-5"
@@ -556,7 +608,10 @@ function OpportunityDetailPage() {
 						)}
 					</TabsContent>
 
-					<TabsContent value="withdraw" className="mt-10 space-y-10 focus-visible:outline-none">
+					<TabsContent
+						value="withdraw"
+						className="mt-10 space-y-10 focus-visible:outline-none"
+					>
 						<section>
 							<div className="grid gap-10 lg:grid-cols-[360px_minmax(0,1fr)] lg:items-start">
 								<div>
@@ -620,7 +675,11 @@ function OpportunityDetailPage() {
 												<button
 													key={`${range}-withdraw`}
 													type="button"
-													onClick={() => setSelectedRange(range)}
+													onClick={() => {
+														if (range !== selectedRange) {
+															setSelectedRange(range);
+														}
+													}}
 													className={cn(
 														"rounded-full px-2.5 py-1 text-xs font-semibold transition-colors",
 														selectedRange === range
@@ -635,71 +694,88 @@ function OpportunityDetailPage() {
 									</div>
 
 									<div className="mt-4">
-										<ChartContainer
-											config={withdrawChartConfig}
-											className="min-h-[300px] w-full"
-										>
-											<LineChart
-												accessibilityLayer
-												data={withdrawChartData}
-												margin={{ left: 4, right: 10, top: 8, bottom: 8 }}
+										<div className="relative">
+											{isFetchingNewRange && (
+												<div className="absolute inset-0 z-50 flex items-center justify-center rounded-[22px] bg-background/80 backdrop-blur-sm">
+													<div className="flex flex-col items-center gap-2">
+														<Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+														<span className="text-sm text-muted-foreground">
+															Updating chart data...
+														</span>
+													</div>
+												</div>
+											)}
+											<ChartContainer
+												config={withdrawChartConfig}
+												className="min-h-[300px] w-full"
 											>
-												<CartesianGrid
-													vertical={false}
-													stroke="rgba(255,255,255,0.06)"
-												/>
-												<XAxis
-													dataKey="label"
-													axisLine={false}
-													tickLine={false}
-													tickMargin={10}
-													tick={{
-														fill: "rgba(255,255,255,0.46)",
-														fontSize: 11,
-													}}
-												/>
-												<YAxis hide domain={["dataMin - 100", "dataMax + 100"]} />
-												<ChartTooltip
-													cursor={false}
-													trigger="hover"
-													isAnimationActive={false}
-													wrapperStyle={{ zIndex: 40, pointerEvents: "none" }}
-													content={
-														<ChartTooltipContent
-															indicator="dot"
-															labelFormatter={(label) => (
-																<span className="text-foreground">{label}</span>
-															)}
-															formatter={(value, name) => (
-																<div className="flex w-full items-center justify-between gap-3">
-																	<span className="text-muted-foreground">
-																		{
-																			withdrawChartConfig[
-																				name as keyof typeof withdrawChartConfig
-																			]?.label
-																		}
-																	</span>
-																	<span className="font-medium text-foreground">
-																		{formatUsd(Number(value))}
-																	</span>
-																</div>
-															)}
-														/>
-													}
-												/>
-												{withdrawChartSeries.map((series) => (
-													<Line
-														key={series.key}
-														type="monotone"
-														dataKey={series.key}
-														stroke={series.color}
-														strokeWidth={2.15}
-														dot={false}
-														activeDot={{ r: 4, fill: series.color }}
+												<LineChart
+													accessibilityLayer
+													data={withdrawChartData}
+													margin={{ left: 4, right: 10, top: 8, bottom: 8 }}
+												>
+													<CartesianGrid
+														vertical={false}
+														stroke="rgba(255,255,255,0.06)"
 													/>
-												))}
-											</LineChart>
-										</ChartContainer>
+													<XAxis
+														dataKey="label"
+														axisLine={false}
+														tickLine={false}
+														tickMargin={10}
+														tick={{
+															fill: "rgba(255,255,255,0.46)",
+															fontSize: 11,
+														}}
+													/>
+													<YAxis
+														hide
+														domain={["dataMin - 100", "dataMax + 100"]}
+													/>
+													<ChartTooltip
+														cursor={false}
+														trigger="hover"
+														isAnimationActive={false}
+														wrapperStyle={{ zIndex: 40, pointerEvents: "none" }}
+														content={
+															<ChartTooltipContent
+																indicator="dot"
+																labelFormatter={(label) => (
+																	<span className="text-foreground">
+																		{label}
+																	</span>
+																)}
+																formatter={(value, name) => (
+																	<div className="flex w-full items-center justify-between gap-3">
+																		<span className="text-muted-foreground">
+																			{
+																				withdrawChartConfig[
+																					name as keyof typeof withdrawChartConfig
+																				]?.label
+																			}
+																		</span>
+																		<span className="font-medium text-foreground">
+																			{formatUsd(Number(value))}
+																		</span>
+																	</div>
+																)}
+															/>
+														}
+													/>
+													{withdrawChartSeries.map((series) => (
+														<Line
+															key={series.key}
+															type="monotone"
+															dataKey={series.key}
+															stroke={series.color}
+															strokeWidth={2.15}
+															dot={false}
+															activeDot={{ r: 4, fill: series.color }}
+														/>
+													))}
+												</LineChart>
+											</ChartContainer>
+										</div>
 										<div className="flex flex-wrap items-center gap-4 border-t border-border/70 px-1 pt-4 text-sm">
 											{withdrawChartSeries.map((series) => (
 												<LegendChip
@@ -725,7 +801,7 @@ function OpportunityDetailPage() {
 									<span className="text-right">Status</span>
 								</div>
 								<div className="divide-y divide-border">
-									{paginatedWithdrawOpportunities.map((opportunity, index) => (
+									{withdrawOpportunities.map((opportunity, index) => (
 										<div
 											key={`${opportunity.id}-withdraw`}
 											className="grid grid-cols-[1.5fr_0.8fr_0.95fr_1fr_1fr_0.9fr] gap-4 px-6 py-5"
@@ -818,78 +894,57 @@ function OpportunityDetailPage() {
 	);
 }
 
-function buildSummary(opportunities: Opportunity[]) {
-	const totalTvlUsd = opportunities.reduce(
-		(sum, opportunity) => sum + opportunity.tvlUsd,
-		0,
-	);
-	const averageApy =
-		opportunities.length > 0
-			? opportunities.reduce((sum, opportunity) => sum + opportunity.apy, 0) /
-				opportunities.length
-			: 0;
-	const withdrawableTvlUsd = opportunities
-		.filter((opportunity) => opportunity.canWithdraw)
-		.reduce((sum, opportunity) => sum + opportunity.tvlUsd, 0);
-	const instantLiquidityUsd = opportunities
-		.filter((opportunity) => opportunity.liquidityLabel === "Instant")
-		.reduce((sum, opportunity) => sum + opportunity.tvlUsd, 0);
-	const instantVenueCount = opportunities.filter(
-		(opportunity) => opportunity.liquidityLabel === "Instant",
-	).length;
-	const adapterReadyCount = opportunities.filter(
-		(opportunity) => opportunity.adapterAvailable,
-	).length;
-	const withdrawEnabledCount = opportunities.filter(
-		(opportunity) => opportunity.canWithdraw,
-	).length;
-	const primaryLiquidityLabel =
-		mostCommonBy(
-			opportunities.map((opportunity) => opportunity.liquidityLabel),
-		) ?? "Flexible";
-	const primaryRisk =
-		opportunities.reduce<Opportunity | null>((current, opportunity) => {
-			if (!current) return opportunity;
-			return opportunity.riskScore > current.riskScore ? opportunity : current;
-		}, null)?.risk ?? "Medium";
-
-	return {
-		totalTvlUsd,
-		averageApy,
-		withdrawableTvlUsd,
-		instantLiquidityUsd,
-		instantVenueCount,
-		adapterReadyCount,
-		withdrawEnabledCount,
-		primaryLiquidityLabel,
-		primaryRisk,
-	};
-}
-
 function buildSeries(
 	opportunities: Opportunity[],
 	colors: readonly string[],
 	mode: "apy" | "liquidity",
+	selectedRange: RangeKey,
 ) {
-	return opportunities.slice(0, 3).map((opportunity, index) => ({
-		key: `series${index + 1}`,
-		label: marketLabel(opportunity, index),
-		color: colors[index] ?? "#8b7eff",
-		points: CHART_MODIFIERS.map((modifier, pointIndex) => {
-			if (mode === "apy") {
-				return Number(
-					(
-						(opportunity.apyBase ?? opportunity.apy) * modifier +
-						(opportunity.apyReward ?? 0) * (0.9 + pointIndex * 0.01)
-					).toFixed(2),
-				);
-			}
+	return opportunities.map((opportunity, index) => {
+		let points: number[] = [];
+		let history = opportunity.history;
 
-			return Number(
-				(opportunity.tvlUsd * modifier * (1 - index * 0.04)).toFixed(2),
-			);
-		}),
-	}));
+		if (history && history.length > 0) {
+			if (history.length === 1) {
+				// Duplicate the single point so the chart can draw a flat line
+				const singlePoint = history[0];
+				history = [
+					{
+						...singlePoint,
+						timestamp: new Date(
+							new Date(singlePoint.timestamp).getTime() - 86400000,
+						).toISOString(),
+					},
+					singlePoint,
+				];
+			}
+			points = history.map((p) => (mode === "apy" ? p.apy : p.tvlUsd));
+		} else {
+			// Fallback if no history
+			const baseValue = mode === "apy" ? opportunity.apy : opportunity.tvlUsd;
+			points = [baseValue, baseValue];
+			history = [
+				{
+					timestamp: new Date(Date.now() - 86400000).toISOString(),
+					apy: opportunity.apy,
+					tvlUsd: opportunity.tvlUsd,
+				},
+				{
+					timestamp: new Date().toISOString(),
+					apy: opportunity.apy,
+					tvlUsd: opportunity.tvlUsd,
+				},
+			];
+		}
+
+		return {
+			key: `series${index + 1}`,
+			label: marketLabel(opportunity, index),
+			color: colors[index] ?? "#8b7eff",
+			points,
+			history,
+		};
+	});
 }
 
 function buildChartConfig(series: ReturnType<typeof buildSeries>) {
@@ -904,12 +959,39 @@ function buildChartConfig(series: ReturnType<typeof buildSeries>) {
 	) satisfies ChartConfig;
 }
 
-function buildChartData(series: ReturnType<typeof buildSeries>) {
-	return CHART_LABELS.map((label, index) => {
-		const row: Record<string, number | string> = { label };
-		for (const item of series) {
-			row[item.key] = item.points[index] ?? 0;
+function buildChartData(
+	series: ReturnType<typeof buildSeries>,
+	range: RangeKey,
+) {
+	if (series.length === 0) return [];
+
+	// Find the series with history to extract timestamps
+	const masterSeries =
+		series.find((s) => s.history && s.history.length > 0) ?? series[0];
+	const dataCount = masterSeries?.points.length ?? 0;
+
+	return Array.from({ length: dataCount }, (_, index) => {
+		let label = "";
+		const historyPoint = masterSeries?.history?.[index];
+
+		if (historyPoint) {
+			const date = new Date(historyPoint.timestamp);
+			if (range === "1W" || range === "1M") {
+				label = date.toLocaleDateString([], { month: "short", day: "numeric" });
+			} else {
+				label = date.toLocaleDateString([], {
+					month: "short",
+					year: "2-digit",
+				});
+			}
+		} else {
+			label = index === dataCount - 1 ? "Now" : `T-${dataCount - 1 - index}`;
 		}
+
+		const row: Record<string, any> = { label };
+		series.forEach((s) => {
+			row[s.key] = s.points[index] ?? 0;
+		});
 		return row;
 	});
 }
@@ -933,6 +1015,14 @@ function marketLabel(opportunity: Opportunity, index: number) {
 	const meta = opportunity.poolMeta?.trim();
 	if (meta && meta.length > 0) {
 		return meta;
+	}
+
+	// Use poolSymbol if it's descriptive, otherwise fallback to category
+	if (
+		opportunity.poolSymbol &&
+		opportunity.poolSymbol !== opportunity.assetSymbol
+	) {
+		return opportunity.poolSymbol;
 	}
 
 	if (opportunity.category && opportunity.category.length > 0) {
@@ -1039,7 +1129,7 @@ function MetricRail({
 					</MetricTooltip>
 				) : null}
 			</div>
-			<div className="mt-4 font-display text-[28px] font-semibold tracking-tight sm:text-[34px]">
+			<div className="mt-4 font-display text-[18px] font-semibold tracking-tight sm:text-[20px]">
 				{value}
 			</div>
 		</div>
@@ -1174,43 +1264,37 @@ function OpportunityDetailSkeleton() {
 					))}
 				</div>
 
-				{Array.from({ length: 2 }).map((_, sectionIndex) => (
-					<div
-						key={sectionIndex}
-						className="mt-10 border-t border-border pt-10"
-					>
-						<div className="grid gap-10 lg:grid-cols-[360px_minmax(0,1fr)]">
-							<div>
-								<div className="h-8 w-32 rounded bg-muted" />
-								<div className="mt-2 h-4 w-64 rounded bg-muted" />
-								<div className="mt-12 h-14 w-36 rounded bg-muted" />
-								<div className="mt-10 space-y-6">
-									{Array.from({ length: 3 }).map((__, index) => (
-										<div key={index} className="border-t border-border pt-5">
-											<div className="h-4 w-28 rounded bg-muted" />
-											<div className="mt-3 ml-auto h-10 w-32 rounded bg-muted" />
-										</div>
-									))}
-								</div>
-							</div>
-							<div className="rounded-[24px] border border-border bg-card/80 p-5">
-								<div className="h-4 w-24 rounded bg-muted" />
-								<div className="mt-1 h-3 w-56 rounded bg-muted" />
-								<div className="mt-5 h-[320px] rounded bg-muted" />
+				<div className="mt-12">
+					<div className="h-10 w-full max-w-[400px] rounded-lg bg-muted" />
+				</div>
+
+				<div className="mt-10 space-y-10">
+					<div className="grid gap-10 lg:grid-cols-[360px_minmax(0,1fr)] lg:items-start">
+						<div>
+							<div className="h-8 w-32 rounded bg-muted" />
+							<div className="mt-2 h-4 w-64 rounded bg-muted" />
+							<div className="mt-12 h-14 w-36 rounded bg-muted" />
+							<div className="mt-10 space-y-6">
+								{Array.from({ length: 3 }).map((__, index) => (
+									<div key={index} className="border-t border-border pt-5">
+										<div className="h-4 w-28 rounded bg-muted" />
+										<div className="mt-3 ml-auto h-10 w-32 rounded bg-muted" />
+									</div>
+								))}
 							</div>
 						</div>
+						<div className="rounded-[24px] border border-border bg-card/80 p-5">
+							<div className="h-4 w-24 rounded bg-muted" />
+							<div className="mt-1 h-3 w-56 rounded bg-muted" />
+							<div className="mt-5 h-[320px] rounded bg-muted" />
+						</div>
 					</div>
-				))}
 
-				{Array.from({ length: 2 }).map((_, index) => (
-					<div
-						key={`table-${index}`}
-						className="mt-12 overflow-hidden rounded-[22px] border border-border bg-card/80"
-					>
+					<div className="overflow-hidden rounded-[22px] border border-border bg-card/80">
 						<div className="h-14 border-b border-border bg-muted/20" />
 						<div className="h-[220px]" />
 					</div>
-				))}
+				</div>
 			</div>
 		</div>
 	);
