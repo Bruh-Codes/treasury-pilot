@@ -11,6 +11,7 @@ import {
 	Landmark,
 	Lock,
 	Globe,
+	ArrowLeftRightIcon,
 } from "lucide-react";
 import Kabon from "@/public/kabon.svg";
 import {
@@ -31,6 +32,7 @@ const main = [{ to: "/", label: "Dashboard", icon: LayoutGrid }] as const;
 
 const explore = [
 	{ to: "/withdraw", label: "Withdraw", icon: CircleArrowUp },
+	{ to: "/swap", label: "Swap", icon: ArrowLeftRightIcon },
 	{ to: "/activity", label: "Activity", icon: Activity },
 ] as const;
 

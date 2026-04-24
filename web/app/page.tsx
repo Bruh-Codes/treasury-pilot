@@ -13,7 +13,6 @@ import { erc20Abi, formatUnits, parseUnits, type Address } from "viem";
 import {
 	CircleArrowDown,
 	ChevronDown,
-	Copy,
 	Info,
 	QrCode,
 	Search,
@@ -1057,7 +1056,7 @@ export default function DashboardPage() {
 							<div className="flex flex-wrap items-center justify-end gap-3">
 								<Button
 									variant="secondary"
-									className="h-12 rounded-full px-4 text-sm font-semibold"
+									className="h-12 rounded-full px-7 flex text-sm font-semibold"
 									onClick={() => setReceiveOpen(true)}
 								>
 									<QrCode data-icon="inline-start" />

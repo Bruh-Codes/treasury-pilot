@@ -126,8 +126,11 @@
 
 	body {
 		background-color: var(--color-background);
-		background-image:
-			linear-gradient(180deg, color-mix(in oklab, var(--color-background) 98%, black) 0%, var(--color-background) 100%);
+		background-image: linear-gradient(
+			180deg,
+			color-mix(in oklab, var(--color-background) 98%, black) 0%,
+			var(--color-background) 100%
+		);
 		color: var(--color-foreground);
 		font-feature-settings: "ss01", "cv11";
 	}
