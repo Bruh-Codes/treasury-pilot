@@ -5,6 +5,8 @@ import { SwapWidget, darkTheme } from "@uniswap/widgets";
 interface UniswapWidgetProps {
 	provider: any;
 	jsonRpcUrlMap: Record<number, string>;
+	convenienceFee?: number;
+	convenienceFeeRecipient?: string;
 }
 
 // This component is only ever loaded client-side (via dynamic import with ssr:false)
@@ -12,9 +14,11 @@ interface UniswapWidgetProps {
 export default function UniswapWidget({
 	provider,
 	jsonRpcUrlMap,
+	convenienceFee,
+	convenienceFeeRecipient,
 }: UniswapWidgetProps) {
 	return (
-		<div className="relative z-10 w-[360px] rounded-2xl bg-[#100f0f] shadow-2xl">
+		<div className="relative z-10 w-[500px] rounded-2xl bg-[#100f0f] shadow-2xl">
 			<SwapWidget
 				provider={provider}
 				jsonRpcUrlMap={jsonRpcUrlMap}
@@ -31,8 +35,10 @@ export default function UniswapWidget({
 					outline: "rgba(255,255,255,0.08)",
 					active: "rgba(255,255,255,0.08)",
 				}}
-				width={360}
+				width={500}
 				hideConnectionUI={true}
+				convenienceFee={convenienceFee}
+				convenienceFeeRecipient={convenienceFeeRecipient}
 			/>
 		</div>
 	);

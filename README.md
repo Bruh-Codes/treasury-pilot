@@ -101,3 +101,44 @@ This repository is a strong base for:
 - positioning the product around both DeFi treasury management and emerging tokenized-asset / RWA rails
 
 It should still be treated as a project under active development rather than a finished production deployment package.
+
+## Hackathon Submission Snapshot
+
+### One-line Pitch
+
+Kabon is an agentic vault copilot that helps users and DAOs deposit once, auto-allocate across vetted strategies, and withdraw safely with transparent unwind logic on Arbitrum, with Robinhood Chain support.
+
+### Problem
+
+- yield routing is fragmented and manual
+- users and operators must track APY/liquidity across many protocols
+- withdrawals are operationally hard when liquidity is not immediately idle
+
+### Solution
+
+- single vault deposit flow with ERC-4626 shares as the user receipt
+- strategy deployment and unwind queue handled at vault/operator layer
+- agentic recommendation and policy-driven execution path in the app UX
+- clearer withdrawal expectations when recalls are needed
+
+### Judging Criteria Mapping
+
+- **Smart contract quality**: upgradeable vault architecture, non-reentrant entrypoints, strategy accounting checks, and test coverage for deploy/withdraw/unwind/upgrade flows
+- **Product-market fit**: targeted at users and treasuries that want simplified yield operations
+- **Innovation and creativity**: combines shared-vault UX with agentic recommendation and execution framing
+- **Real problem solving**: reduces fragmented yield management and makes unwind behavior explicit
+
+### 2-Minute Demo Flow
+
+1. connect wallet and select supported Arbitrum chain
+2. deposit into the vault-backed flow
+3. show recommendation card and rationale (APY/liquidity/risk context)
+4. execute allocation action and show resulting transaction state
+5. walk through withdrawal path including idle-liquidity-first and strategy recall behavior
+
+### Submission Checklist
+
+- deployed on an eligible Arbitrum ecosystem chain
+- at least one Robinhood Chain-facing path included in the user flow
+- demo video link, deployment addresses, and setup steps documented
+- test commands and expected outputs documented for reviewers

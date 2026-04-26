@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { reownEnabled } from "@/lib/reown";
 import { toast } from "sonner";
+import Link from "next/link";
 
 export function TopBar() {
 	const { open } = useAppKit();
@@ -29,11 +30,14 @@ export function TopBar() {
 			</div>
 
 			<Button
+				asChild
 				variant="secondary"
 				className="h-10 rounded-full flex px-3 text-sm font-semibold"
 			>
-				<ArrowLeftRightIcon data-icon="inline-start" />
-				Swap
+				<Link href="/swap">
+					<ArrowLeftRightIcon data-icon="inline-start" />
+					Swap
+				</Link>
 			</Button>
 			<div className="ml-auto flex items-center gap-2.5">
 				{address ? (

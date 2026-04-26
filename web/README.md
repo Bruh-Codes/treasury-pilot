@@ -134,3 +134,45 @@ The current interface is designed around a vault product rather than a generic w
 
 - [root README](C:\Users\hp\Desktop\arbs-london\README.md)
 - [contracts README](C:\Users\hp\Desktop\arbs-london\contracts\README.md)
+
+## Devpost / Hackathon Copy Pack
+
+### Short Description
+
+Kabon is an agentic DeFi vault interface where users deposit once and let a policy-aware copilot route and unwind capital across supported opportunities on Arbitrum, with Robinhood Chain support for expansion.
+
+### Full Description
+
+Kabon focuses on a practical DeFi pain point: yield management is fragmented, time-consuming, and hard to unwind safely. The app provides a vault-oriented UX where users can deposit supported assets, review recommendation context, and follow a clear withdrawal flow that accounts for idle liquidity and strategy recalls.
+
+The frontend is designed to expose:
+
+- wallet and network-aware interactions across Arbitrum and Robinhood Chain testnet support
+- recommendation and opportunity surfaces that can drive agentic decisioning
+- deposit and withdrawal UX with more transparent liquidity and unwind expectations
+- app routes and APIs that support asset/protocol/opportunity data presentation
+
+### Demo Narration Script (2 minutes)
+
+1. "Kabon helps users avoid manual strategy hopping by using a shared vault model."
+2. Connect wallet and confirm you are on a supported chain.
+3. Open deposit flow, select asset, and submit vault deposit transaction.
+4. Show recommendation/opportunity context and explain why a route is preferred.
+5. Show withdrawal flow and explain idle-liquidity-first behavior plus strategy recall path.
+6. Close with: "one vault position, policy-guided allocation, and clearer risk/exit visibility."
+
+### Judging Criteria Mapping (Frontend)
+
+- **Product-market fit**: simplified UX for repetitive yield operations
+- **Innovation**: combines agentic recommendation framing with transaction-capable vault UX
+- **Real problem solving**: reduces operational complexity around discovery, deployment, and exits
+
+### Reviewer Quickstart
+
+```bash
+cd web
+bun install
+bun run dev
+```
+
+Set required environment variables in `.env.local` (see wallet and vault variables above) before running the demo.

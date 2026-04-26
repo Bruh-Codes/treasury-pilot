@@ -41,11 +41,11 @@ export default function RootLayout({
 				<ReownProvider>
 					<TooltipProvider>
 						<SidebarProvider defaultOpen>
-							<div className="flex min-h-screen w-full bg-background text-foreground">
+							<div className="flex min-h-screen w-full overflow-x-hidden bg-background text-foreground">
 								<AppSidebar />
-								<SidebarInset className="flex min-h-screen flex-1 flex-col bg-background">
+								<SidebarInset className="flex min-h-screen min-w-0 flex-1 flex-col bg-background">
 									<TopBar />
-									<main className="flex-1">{children}</main>
+									<main className="flex-1 min-w-0">{children}</main>
 								</SidebarInset>
 								<Toaster />
 							</div>

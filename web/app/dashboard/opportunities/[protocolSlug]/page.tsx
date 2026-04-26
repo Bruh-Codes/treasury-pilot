@@ -11,6 +11,7 @@ import {
 	Clock3,
 	Droplets,
 	Info,
+	Loader2,
 	ShieldCheck,
 	Wallet,
 } from "lucide-react";
@@ -81,7 +82,8 @@ function OpportunityDetailPage() {
 		selectedRange,
 	);
 
-	const isFetchingNewRange = opportunitiesQuery.isFetching && opportunitiesQuery.isPlaceholderData;
+	const isFetchingNewRange =
+		opportunitiesQuery.isFetching && opportunitiesQuery.isPlaceholderData;
 
 	const opportunities = opportunitiesQuery.data?.opportunities ?? [];
 	const summary = opportunitiesQuery.data?.summary ?? {
@@ -116,11 +118,23 @@ function OpportunityDetailPage() {
 	);
 
 	const depositChartSeries = useMemo(
-		() => buildSeries(topDepositOpportunities, DEPOSIT_COLORS, "apy", selectedRange),
+		() =>
+			buildSeries(
+				topDepositOpportunities,
+				DEPOSIT_COLORS,
+				"apy",
+				selectedRange,
+			),
 		[topDepositOpportunities, selectedRange],
 	);
 	const withdrawChartSeries = useMemo(
-		() => buildSeries(topWithdrawOpportunities, WITHDRAW_COLORS, "liquidity", selectedRange),
+		() =>
+			buildSeries(
+				topWithdrawOpportunities,
+				WITHDRAW_COLORS,
+				"liquidity",
+				selectedRange,
+			),
 		[topWithdrawOpportunities, selectedRange],
 	);
 	const depositChartConfig = useMemo(
@@ -140,7 +154,6 @@ function OpportunityDetailPage() {
 		[withdrawChartSeries, selectedRange],
 	);
 	const notice = buildNotice(opportunities, primary?.adapterAvailable ?? false);
-
 
 	if (opportunitiesQuery.isPending && opportunitiesQuery.data === undefined) {
 		return <OpportunityDetailSkeleton />;
@@ -493,7 +506,7 @@ function OpportunityDetailPage() {
 									<span className="text-right">Withdrawals</span>
 								</div>
 								<div className="divide-y divide-border">
-									{depositOpportunities.map((opportunity, index) => (
+									{topDepositOpportunities.map((opportunity, index) => (
 										<div
 											key={opportunity.id}
 											className="grid grid-cols-[1.5fr_0.9fr_1fr_1fr_1fr_1fr] gap-4 px-6 py-5"
@@ -776,7 +789,7 @@ function OpportunityDetailPage() {
 									<span className="text-right">Status</span>
 								</div>
 								<div className="divide-y divide-border">
-									{withdrawOpportunities.map((opportunity, index) => (
+									{topWithdrawOpportunities.map((opportunity, index) => (
 										<div
 											key={`${opportunity.id}-withdraw`}
 											className="grid grid-cols-[1.5fr_0.8fr_0.95fr_1fr_1fr_0.9fr] gap-4 px-6 py-5"
@@ -879,8 +892,8 @@ function buildSeries(
 		let points: number[] = [];
 
 		if (opportunity.history && opportunity.history.length > 0) {
-			points = opportunity.history.map((p) => 
-				mode === "apy" ? p.apy : p.tvlUsd
+			points = opportunity.history.map((p) =>
+				mode === "apy" ? p.apy : p.tvlUsd,
 			);
 		} else {
 			// Fallback if no history
@@ -910,23 +923,30 @@ function buildChartConfig(series: ReturnType<typeof buildSeries>) {
 	) satisfies ChartConfig;
 }
 
-function buildChartData(series: ReturnType<typeof buildSeries>, range: RangeKey) {
+function buildChartData(
+	series: ReturnType<typeof buildSeries>,
+	range: RangeKey,
+) {
 	if (series.length === 0) return [];
 
 	// Find the series with history to extract timestamps
-	const masterSeries = series.find(s => s.history && s.history.length > 0) ?? series[0];
+	const masterSeries =
+		series.find((s) => s.history && s.history.length > 0) ?? series[0];
 	const dataCount = masterSeries?.points.length ?? 0;
 
 	return Array.from({ length: dataCount }, (_, index) => {
 		let label = "";
 		const historyPoint = masterSeries?.history?.[index];
-		
+
 		if (historyPoint) {
 			const date = new Date(historyPoint.timestamp);
 			if (range === "1D") {
-				label = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+				label = date.toLocaleTimeString([], {
+					hour: "2-digit",
+					minute: "2-digit",
+				});
 			} else {
-				label = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+				label = date.toLocaleDateString([], { month: "short", day: "numeric" });
 			}
 		} else {
 			label = index === dataCount - 1 ? "Now" : `T-${dataCount - 1 - index}`;

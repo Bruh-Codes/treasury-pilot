@@ -3,7 +3,7 @@
 import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import { useAccount, useClient } from "wagmi";
-import { reownNetworks } from "@/lib/reown";
+import { createRpcUrlMap, isChainSupported } from "@/lib/chains-config";
 import { providers } from "ethers";
 
 // Load the Uniswap widget only on the client side.
@@ -31,18 +31,7 @@ export default function SwapPage() {
 		};
 	}
 
-	const jsonRpcUrlMap = useMemo(() => {
-		const map: Record<number, string> = {
-			1: "https://eth.llamarpc.com",
-		};
-		reownNetworks.forEach((network) => {
-			const rpcUrl = network.rpcUrls.default.http[0];
-			if (rpcUrl) {
-				map[network.id as number] = rpcUrl;
-			}
-		});
-		return map;
-	}, []);
+	const jsonRpcUrlMap = useMemo(() => createRpcUrlMap(), []);
 
 	useEffect(() => {
 		if (connector) {
@@ -94,14 +83,23 @@ export default function SwapPage() {
 		}
 	}, [connector, client]);
 
-	const isSupportedChain = useMemo(() => {
-		if (!chainId) return false;
-		return reownNetworks.some((n) => n.id === chainId);
-	}, [chainId]);
+	const isSupportedChain = useMemo(() => isChainSupported(chainId), [chainId]);
+	const convenienceFee = parseFloat(
+		process.env.NEXT_PUBLIC_CONVENIENCE_FEE || "0.01",
+	);
+	const convenienceFeeRecipient =
+		process.env.NEXT_PUBLIC_CONVENIENCE_FEE_RECIPIENT;
 
 	return (
-		<div className="px-6 py-12 md:px-7 md:py-20 flex flex-col items-center min-h-[80vh]">
-			<UniswapWidget provider={provider} jsonRpcUrlMap={jsonRpcUrlMap} />
+		<div className="px-6 md:px-7 grid place-content-center flex flex-col items-center min-h-[80vh]">
+			<UniswapWidget
+				provider={provider}
+				jsonRpcUrlMap={jsonRpcUrlMap}
+				convenienceFee={
+					convenienceFee ? Math.floor(convenienceFee * 10000) : undefined
+				}
+				convenienceFeeRecipient={convenienceFeeRecipient || undefined}
+			/>
 
 			{!address ? (
 				<p className="mt-6 text-sm text-muted-foreground">

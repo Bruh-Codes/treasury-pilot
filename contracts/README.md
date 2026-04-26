@@ -216,3 +216,29 @@ The current suite covers:
 
 - [Hardhat Ignition upgradeable proxy guide](https://hardhat.org/ignition/docs/guides/upgradeable-proxies)
 - [OpenZeppelin ERC-4626 documentation](https://docs.openzeppelin.com/contracts/5.x/erc4626)
+
+## Hackathon Smart Contract Summary
+
+### Why This Contract Design Fits Judging
+
+- **Smart contract quality**: upgradeable ERC-4626 architecture with explicit strategy accounting and unwind controls
+- **Security posture**: reentrancy protections, short-receipt checks, strategy misreport rejection, ownership safety controls
+- **Operational realism**: withdrawal queue and paused-loss-sync model align with real unwind scenarios
+
+### What Reviewers Should Verify Quickly
+
+```bash
+cd contracts
+yarn install
+npx hardhat compile
+npx hardhat test
+```
+
+Expected result: all tests pass, including proxy deployment, unwind behavior, fee behavior, reentrancy defenses, and upgrade continuity tests.
+
+### Suggested Judge Walkthrough
+
+1. review `YieldPilotVault.sol` and strategy manager separation
+2. inspect pause, ownership, and strategy whitelist controls
+3. run tests and confirm edge-case coverage
+4. validate deployment flow through Ignition proxy module
