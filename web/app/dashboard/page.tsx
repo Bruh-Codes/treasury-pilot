@@ -1,15 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAppKitAccount } from "@reown/appkit/react";
 import {
-	useBalance,
 	useChainId,
 	usePublicClient,
-	useReadContracts,
 	useWalletClient,
 } from "wagmi";
-import { erc20Abi, formatUnits, parseUnits, type Address } from "viem";
+import { erc20Abi, parseUnits, type Address } from "viem";
 import {
 	CircleArrowDown,
 	ChevronDown,
@@ -55,20 +53,30 @@ import {
 	TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { APP_SUPPORTED_CHAINS, PRIMARY_CHAIN_LABEL } from "@/lib/app-chains";
-import { getChainById } from "@/lib/chain-utils";
+import { getChainById, getChainOptions } from "@/lib/chain-utils";
 import { yieldPilotVaultAbi } from "@/lib/vault-abi";
 import {
 	getSupportedVaultAsset,
 	getSupportedVaultAssets,
 } from "@/lib/vault-registry";
-import { useAssetSummaries } from "@/lib/use-yieldpilot-market-data";
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
+import {
+	useAssetRegistry,
+	useAssetSummaries,
+	useGreeting,
+	useMultichainBalances,
+	useMultichainVaultPositions,
+	useTokenHistory,
+	useTokenPrices,
+} from "@/lib/use-yieldpilot-market-data";
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 
 type AssetItem = {
 	id: string;
 	name: string;
 	symbol: string;
+	chainId: number;
+	chainLabel: string;
 	iconUrl?: string;
 	walletBalance: number;
 	deposited: string;
@@ -76,6 +84,7 @@ type AssetItem = {
 	totalDeposits: string;
 	availableLiquidity: string;
 	supported: boolean;
+	stable: boolean;
 	iconClass: string;
 	tokenAddress?: Address;
 	tokenDecimals?: number;
@@ -88,9 +97,11 @@ type RangeKey = "1D" | "1W" | "1M" | "6M" | "1Y" | "All";
 const RANGE_OPTIONS: RangeKey[] = ["1D", "1W", "1M", "6M", "1Y", "All"];
 
 function readAddress(value: string | undefined): Address | undefined {
-	return value && /^0x[a-fA-F0-9]{40}$/.test(value)
-		? (value as Address)
-		: undefined;
+	if (!value || !/^0x[a-fA-F0-9]{40}$/.test(value)) {
+		return undefined;
+	}
+
+	return /^0x0{40}$/i.test(value) ? undefined : (value as Address);
 }
 
 const arbitrumSepoliaUsdcTokenAddress = readAddress(
@@ -215,10 +226,39 @@ function compactAmount(value: number) {
 	}).format(value);
 }
 
+function formatWalletBalance(value: number) {
+	if (!Number.isFinite(value) || value <= 0) {
+		return "-";
+	}
+
+	if (value < 0.000001) {
+		return "<0.000001";
+	}
+
+	return value.toLocaleString(undefined, {
+		minimumFractionDigits: value >= 1 ? 0 : 2,
+		maximumFractionDigits: value >= 1 ? 4 : 6,
+	});
+}
+
+const WALLET_CHART_COLORS = [
+	"#8b7eff",
+	"#5ec6ff",
+	"#f59e0b",
+	"#d38cf5",
+	"#22c55e",
+	"#f43f5e",
+	"#06b6d4",
+	"#a3e635",
+];
+
 export default function DashboardPage() {
 	const assetSummaries = useAssetSummaries();
+	const assetRegistry = useAssetRegistry();
+	const greetingQuery = useGreeting();
 	const { address } = useAppKitAccount();
 	const chainId = useChainId();
+	const chainOptions = getChainOptions();
 	const [search, setSearch] = useState("");
 	const [noBalanceAsset, setNoBalanceAsset] = useState<AssetItem | null>(null);
 	const [depositAsset, setDepositAsset] = useState<AssetItem | null>(null);
@@ -227,7 +267,11 @@ export default function DashboardPage() {
 	const [receiveOpen, setReceiveOpen] = useState(false);
 	const [chainsOpen, setChainsOpen] = useState(false);
 	const [selectedRange, setSelectedRange] = useState<RangeKey>("1W");
+	const [selectedChartAssetSymbol, setSelectedChartAssetSymbol] = useState<
+		string | null
+	>(null);
 	const summaries = assetSummaries.data?.assets ?? [];
+	const registryAssets = assetRegistry.data?.assets ?? [];
 	const publicClient = usePublicClient();
 	const { data: walletClient } = useWalletClient();
 	const supportedVaultAssets = useMemo(
@@ -235,138 +279,181 @@ export default function DashboardPage() {
 		[chainId],
 	);
 	const receiveVaultAsset = supportedVaultAssets[0];
-	const nativeBalance = useBalance({
-		address: address as Address | undefined,
-		query: {
-			enabled: Boolean(address),
-		},
-	});
-	const trackedTokenContracts = useMemo(() => {
-		if (!address) return [];
-		const chainConfig = TRACKED_TOKEN_CONFIG[chainId] ?? {};
-		return summaries
-			.map((summary) => {
-				const token = chainConfig[summary.symbol];
-				if (!token) return null;
-				return {
-					symbol: summary.symbol,
+	const trackedVaultPositions = useMemo(
+		() =>
+			chainOptions.flatMap((chain) =>
+				getSupportedVaultAssets(chain.id).map((asset) => ({
+					key: `${chain.id}:${asset.vaultAddress.toLowerCase()}`,
+					chainId: chain.id,
+					symbol: asset.symbol,
+					vaultAddress: asset.vaultAddress,
+					tokenDecimals: asset.tokenDecimals,
+				})),
+			),
+		[chainOptions],
+	);
+	const trackedAssetCatalog = useMemo(() => {
+		const next = new Map<
+			string,
+			{
+				key: string;
+				chainId: number;
+				symbol: string;
+				name: string;
+				decimals: number;
+				stable: boolean;
+				isNative?: boolean;
+				tokenAddress?: Address;
+				iconUrl?: string;
+			}
+		>();
+
+		for (const chain of chainOptions) {
+			const nativeKey = `${chain.id}:native:ETH`;
+			next.set(nativeKey, {
+				key: nativeKey,
+				chainId: chain.id,
+				symbol: "ETH",
+				name: "Ethereum",
+				decimals: 18,
+				stable: false,
+				isNative: true,
+				iconUrl: getTrustWalletIconUrl(undefined, "ETH", chain.id),
+			});
+		}
+
+		for (const [trackedChainId, configBySymbol] of Object.entries(
+			TRACKED_TOKEN_CONFIG,
+		)) {
+			const numericChainId = Number(trackedChainId);
+			for (const [symbol, token] of Object.entries(configBySymbol ?? {})) {
+				if (!token) continue;
+				const key = `${numericChainId}:${token.address.toLowerCase()}`;
+				next.set(key, {
+					key,
+					chainId: numericChainId,
+					symbol,
+					name:
+						summaries.find((summary) => summary.symbol === symbol)?.name ?? symbol,
 					decimals: token.decimals,
 					stable: token.stable,
-					contract: {
-						address: token.address,
-						abi: erc20Abi,
-						functionName: "balanceOf" as const,
-						args: [address as Address] as const,
-					},
-				};
-			})
-			.filter((item): item is NonNullable<typeof item> => item !== null);
-	}, [address, chainId, summaries]);
-	const tokenBalances = useReadContracts({
-		allowFailure: true,
-		contracts: trackedTokenContracts.map((item) => item.contract),
-		query: {
-			enabled: trackedTokenContracts.length > 0,
-		},
-	});
+					tokenAddress: token.address,
+					iconUrl: getTrustWalletIconUrl(token.address, symbol, numericChainId),
+				});
+			}
+		}
+
+		for (const asset of registryAssets) {
+			const tokenAddress = readAddress(asset.address);
+			if (!tokenAddress) continue;
+			const key = `${asset.chainId}:${asset.address.toLowerCase()}`;
+			next.set(key, {
+				key,
+				chainId: asset.chainId,
+				symbol: asset.symbol,
+				name: asset.name,
+				decimals: asset.decimals,
+				stable:
+					asset.assetType === "stablecoin" ||
+					asset.symbol === "USDC" ||
+					asset.symbol === "USDT" ||
+					asset.symbol === "RLUSD" ||
+					asset.symbol === "USDE",
+				tokenAddress,
+				iconUrl:
+					asset.iconUrl ??
+					getTrustWalletIconUrl(tokenAddress, asset.symbol, asset.chainId),
+			});
+		}
+
+		return Array.from(next.values());
+	}, [chainOptions, registryAssets, summaries]);
+	const multichainBalances = useMultichainBalances(
+		address as Address | undefined,
+		trackedAssetCatalog.map((asset) => ({
+			key: asset.key,
+			chainId: asset.chainId,
+			symbol: asset.symbol,
+			name: asset.name,
+			decimals: asset.decimals,
+			isNative: asset.isNative,
+			tokenAddress: asset.tokenAddress,
+		})),
+	);
+	const multichainVaultPositions = useMultichainVaultPositions(
+		address as Address | undefined,
+		trackedVaultPositions,
+	);
 	const isAssetSummariesLoading =
 		assetSummaries.isPending && assetSummaries.data === undefined;
-	const isNativeBalanceLoading =
+	const isRegistryLoading =
 		Boolean(address) &&
-		nativeBalance.isPending &&
-		nativeBalance.data === undefined;
-	const isTokenBalancesLoading =
+		assetRegistry.isPending &&
+		assetRegistry.data === undefined;
+	const isMultichainBalancesLoading =
 		Boolean(address) &&
-		trackedTokenContracts.length > 0 &&
-		tokenBalances.isPending &&
-		tokenBalances.data === undefined;
+		trackedAssetCatalog.length > 0 &&
+		multichainBalances.isPending &&
+		multichainBalances.data === undefined;
+	const isVaultPositionsLoading =
+		Boolean(address) &&
+		trackedVaultPositions.length > 0 &&
+		multichainVaultPositions.isPending &&
+		multichainVaultPositions.data === undefined;
 	const isPageLoading =
-		isAssetSummariesLoading || isNativeBalanceLoading || isTokenBalancesLoading;
-	const balanceBySymbol = useMemo(() => {
-		const next = new Map<string, { balance: number; stable: boolean }>();
-		if (nativeBalance.data?.value !== undefined) {
-			next.set("ETH", {
-				balance: Number(
-					formatUnits(nativeBalance.data.value, nativeBalance.data.decimals),
-				),
-				stable: false,
-			});
-		}
-		trackedTokenContracts.forEach((item, index) => {
-			const result = tokenBalances.data?.[index];
-			if (!result || result.status !== "success") return;
-			next.set(item.symbol, {
-				balance: Number(formatUnits(result.result, item.decimals)),
-				stable: item.stable,
-			});
-		});
-		return next;
-	}, [nativeBalance.data, tokenBalances.data, trackedTokenContracts]);
+		isAssetSummariesLoading ||
+		isRegistryLoading ||
+		isMultichainBalancesLoading ||
+		isVaultPositionsLoading;
 
 	const assets = useMemo(() => {
-		if (summaries.length === 0) {
-			return [
-				{
-					id: "usdc",
-					name: "USD Coin",
-					symbol: "USDC",
-					iconUrl: getTrustWalletIconUrl(
-						arbitrumSepoliaUsdcTokenAddress,
-						"USDC",
-						chainId,
-					),
-					walletBalance: 0,
-					deposited: "-",
-					apy: assetSummaries.isLoading ? "Loading..." : "-",
-					totalDeposits: "-",
-					availableLiquidity: "-",
-					supported: true,
-					iconClass: ASSET_ICON_CLASSES.USDC,
-				},
-			] satisfies AssetItem[];
-		}
+		const summaryBySymbol = new Map(
+			summaries.map((summary) => [summary.symbol, summary] as const),
+		);
 
-		return summaries.map((summary) => {
-			const vaultConfig = getSupportedVaultAsset(chainId, summary.symbol);
-			// For native ETH, don't use tokenAddress even if it exists in vault config
-			const tokenAddress =
-				summary.symbol === "ETH" ? undefined : vaultConfig?.tokenAddress;
-			const dynamicIconUrl = getTrustWalletIconUrl(
-				tokenAddress,
-				summary.symbol,
-				chainId,
-			);
-			const iconClass =
-				ASSET_ICON_CLASSES[summary.symbol] ?? "from-neutral-500 to-neutral-700";
+		return trackedAssetCatalog.map((asset) => {
+			const currentSummary =
+				asset.chainId === chainId ? summaryBySymbol.get(asset.symbol) : undefined;
+			const vaultConfig =
+				asset.chainId === chainId
+					? getSupportedVaultAsset(chainId, asset.symbol)
+					: undefined;
+			const chainLabel =
+				getChainById(asset.chainId)?.name ?? `Chain ${asset.chainId}`;
+			const balance = multichainBalances.data?.balances?.[asset.key]?.balance ?? 0;
 
 			return {
-				id: summary.symbol.toLowerCase(),
-				name: summary.name,
-				symbol: summary.symbol,
-				iconUrl: summary.iconUrl ?? dynamicIconUrl,
-				walletBalance: balanceBySymbol.get(summary.symbol)?.balance ?? 0,
+				id: asset.key,
+				name: asset.name,
+				symbol: asset.symbol,
+				chainId: asset.chainId,
+				chainLabel,
+				iconUrl: asset.iconUrl,
+				walletBalance: balance,
 				deposited: "-",
 				apy:
-					summary.protocolCount > 0
-						? `${summary.averageApy.toFixed(2)}% avg`
+					currentSummary && currentSummary.protocolCount > 0
+						? `${currentSummary.averageApy.toFixed(2)}% avg`
 						: "-",
 				totalDeposits:
-					summary.totalTvlUsd > 0
-						? `${compactAmount(summary.totalTvlUsd)} TVL`
+					currentSummary && currentSummary.totalTvlUsd > 0
+						? `${compactAmount(currentSummary.totalTvlUsd)} TVL`
 						: "-",
 				availableLiquidity:
-					summary.availableLiquidityUsd > 0
-						? `${compactAmount(summary.availableLiquidityUsd)} liquid`
+					currentSummary && currentSummary.availableLiquidityUsd > 0
+						? `${compactAmount(currentSummary.availableLiquidityUsd)} liquid`
 						: "-",
-				supported: summary.supported && Boolean(vaultConfig),
-				iconClass: iconClass,
-				tokenAddress: vaultConfig?.tokenAddress,
-				tokenDecimals: vaultConfig?.tokenDecimals,
+				supported: Boolean(vaultConfig),
+				stable: asset.stable,
+				iconClass:
+					ASSET_ICON_CLASSES[asset.symbol] ?? "from-neutral-500 to-neutral-700",
+				tokenAddress: asset.tokenAddress,
+				tokenDecimals: vaultConfig?.tokenDecimals ?? asset.decimals,
 				vaultAddress: vaultConfig?.vaultAddress,
 				vaultLabel: vaultConfig?.vaultLabel,
-			};
+			} satisfies AssetItem;
 		});
-	}, [assetSummaries.isLoading, balanceBySymbol, chainId, summaries]);
+	}, [chainId, multichainBalances.data?.balances, summaries, trackedAssetCatalog]);
 
 	const walletAssets = useMemo(
 		() =>
@@ -379,13 +466,6 @@ export default function DashboardPage() {
 		() => walletAssets.filter((asset) => asset.supported),
 		[walletAssets],
 	);
-	const totalWalletStableBalance = useMemo(
-		() =>
-			Array.from(balanceBySymbol.values())
-				.filter((asset) => asset.stable)
-				.reduce((sum, asset) => sum + asset.balance, 0),
-		[balanceBySymbol],
-	);
 	const supportedWalletAssets = supportedDepositAssets.length;
 
 	const filtered = useMemo(() => {
@@ -394,7 +474,8 @@ export default function DashboardPage() {
 			const matchesSearch =
 				term.length === 0 ||
 				asset.name.toLowerCase().includes(term) ||
-				asset.symbol.toLowerCase().includes(term);
+				asset.symbol.toLowerCase().includes(term) ||
+				asset.chainLabel.toLowerCase().includes(term);
 			return matchesSearch;
 		});
 	}, [walletAssets, search]);
@@ -403,9 +484,10 @@ export default function DashboardPage() {
 		id: asset.id,
 		name: asset.name,
 		symbol: asset.symbol,
+		chainLabel: asset.chainLabel,
 		walletBalance:
 			asset.walletBalance > 0
-				? `${asset.walletBalance.toLocaleString()} ${asset.symbol}`
+				? `${formatWalletBalance(asset.walletBalance)} ${asset.symbol}`
 				: "-",
 		deposited: asset.deposited,
 		apy: asset.apy,
@@ -416,290 +498,226 @@ export default function DashboardPage() {
 		iconUrl: asset.iconUrl,
 	}));
 
-	const chartConfig = {
-		usdc: {
-			label: "USDC",
-			color: "#8b7eff",
-		},
-		eth: {
-			label: "ETH",
-			color: "#5ec6ff",
-		},
-		wbtc: {
-			label: "WBTC",
-			color: "#f59e0b",
-		},
-		aave: {
-			label: "AAVE",
-			color: "#d38cf5",
-		},
-	} satisfies ChartConfig;
-
-	const chartData = useMemo(() => {
-		const base = totalWalletStableBalance;
-		const series: Record<
-			RangeKey,
-			Array<{
+	const trackedValueSymbols = useMemo(
+		() =>
+			Array.from(
+				new Set([
+					...walletAssets.map((asset) => asset.symbol),
+					...trackedVaultPositions.map((position) => position.symbol),
+				]),
+			).sort(),
+		[trackedVaultPositions, walletAssets],
+	);
+	const tokenPrices = useTokenPrices(trackedValueSymbols);
+	const tokenHistory = useTokenHistory(
+		Array.from(new Set(walletAssets.map((asset) => asset.symbol))).sort(),
+		selectedRange,
+	);
+	const walletChartAssets = useMemo(() => {
+		const grouped = new Map<
+			string,
+			{
+				symbol: string;
 				label: string;
-				usdc: number;
-				eth: number;
-				wbtc: number;
-				aave: number;
-			}>
-		> = {
-			"1D": [
-				{
-					label: "00:00",
-					usdc: base * 0.44,
-					eth: base * 0.19,
-					wbtc: base * 0.11,
-					aave: base * 0.06,
-				},
-				{
-					label: "04:00",
-					usdc: base * 0.45,
-					eth: base * 0.2,
-					wbtc: base * 0.111,
-					aave: base * 0.062,
-				},
-				{
-					label: "08:00",
-					usdc: base * 0.455,
-					eth: base * 0.205,
-					wbtc: base * 0.114,
-					aave: base * 0.064,
-				},
-				{
-					label: "12:00",
-					usdc: base * 0.461,
-					eth: base * 0.211,
-					wbtc: base * 0.116,
-					aave: base * 0.067,
-				},
-				{
-					label: "16:00",
-					usdc: base * 0.468,
-					eth: base * 0.217,
-					wbtc: base * 0.12,
-					aave: base * 0.069,
-				},
-				{
-					label: "20:00",
-					usdc: base * 0.474,
-					eth: base * 0.221,
-					wbtc: base * 0.123,
-					aave: base * 0.071,
-				},
-			],
-			"1W": [
-				{
-					label: "Mon",
-					usdc: base * 0.41,
-					eth: base * 0.15,
-					wbtc: base * 0.1,
-					aave: base * 0.05,
-				},
-				{
-					label: "Tue",
-					usdc: base * 0.425,
-					eth: base * 0.161,
-					wbtc: base * 0.104,
-					aave: base * 0.054,
-				},
-				{
-					label: "Wed",
-					usdc: base * 0.439,
-					eth: base * 0.176,
-					wbtc: base * 0.108,
-					aave: base * 0.058,
-				},
-				{
-					label: "Thu",
-					usdc: base * 0.452,
-					eth: base * 0.192,
-					wbtc: base * 0.113,
-					aave: base * 0.062,
-				},
-				{
-					label: "Fri",
-					usdc: base * 0.463,
-					eth: base * 0.204,
-					wbtc: base * 0.118,
-					aave: base * 0.066,
-				},
-				{
-					label: "Sat",
-					usdc: base * 0.47,
-					eth: base * 0.214,
-					wbtc: base * 0.121,
-					aave: base * 0.069,
-				},
-				{
-					label: "Sun",
-					usdc: base * 0.478,
-					eth: base * 0.224,
-					wbtc: base * 0.124,
-					aave: base * 0.072,
-				},
-			],
-			"1M": [
-				{
-					label: "W1",
-					usdc: base * 0.33,
-					eth: base * 0.1,
-					wbtc: base * 0.08,
-					aave: base * 0.03,
-				},
-				{
-					label: "W2",
-					usdc: base * 0.372,
-					eth: base * 0.126,
-					wbtc: base * 0.091,
-					aave: base * 0.041,
-				},
-				{
-					label: "W3",
-					usdc: base * 0.421,
-					eth: base * 0.163,
-					wbtc: base * 0.106,
-					aave: base * 0.055,
-				},
-				{
-					label: "W4",
-					usdc: base * 0.458,
-					eth: base * 0.198,
-					wbtc: base * 0.118,
-					aave: base * 0.066,
-				},
-				{
-					label: "Now",
-					usdc: base * 0.478,
-					eth: base * 0.224,
-					wbtc: base * 0.124,
-					aave: base * 0.072,
-				},
-			],
-			"6M": [
-				{
-					label: "Nov",
-					usdc: base * 0.18,
-					eth: base * 0.04,
-					wbtc: base * 0.03,
-					aave: base * 0.012,
-				},
-				{
-					label: "Dec",
-					usdc: base * 0.23,
-					eth: base * 0.06,
-					wbtc: base * 0.042,
-					aave: base * 0.017,
-				},
-				{
-					label: "Jan",
-					usdc: base * 0.29,
-					eth: base * 0.085,
-					wbtc: base * 0.058,
-					aave: base * 0.025,
-				},
-				{
-					label: "Feb",
-					usdc: base * 0.36,
-					eth: base * 0.122,
-					wbtc: base * 0.08,
-					aave: base * 0.037,
-				},
-				{
-					label: "Mar",
-					usdc: base * 0.43,
-					eth: base * 0.174,
-					wbtc: base * 0.103,
-					aave: base * 0.055,
-				},
-				{
-					label: "Apr",
-					usdc: base * 0.478,
-					eth: base * 0.224,
-					wbtc: base * 0.124,
-					aave: base * 0.072,
-				},
-			],
-			"1Y": [
-				{
-					label: "Q2",
-					usdc: base * 0.11,
-					eth: base * 0.02,
-					wbtc: base * 0.015,
-					aave: base * 0.006,
-				},
-				{
-					label: "Q3",
-					usdc: base * 0.19,
-					eth: base * 0.043,
-					wbtc: base * 0.031,
-					aave: base * 0.012,
-				},
-				{
-					label: "Q4",
-					usdc: base * 0.29,
-					eth: base * 0.086,
-					wbtc: base * 0.055,
-					aave: base * 0.026,
-				},
-				{
-					label: "Q1",
-					usdc: base * 0.4,
-					eth: base * 0.153,
-					wbtc: base * 0.091,
-					aave: base * 0.047,
-				},
-				{
-					label: "Now",
-					usdc: base * 0.478,
-					eth: base * 0.224,
-					wbtc: base * 0.124,
-					aave: base * 0.072,
-				},
-			],
-			All: [
-				{
-					label: "Start",
-					usdc: base * 0.05,
-					eth: base * 0.008,
-					wbtc: base * 0.005,
-					aave: base * 0.002,
-				},
-				{
-					label: "Phase 1",
-					usdc: base * 0.14,
-					eth: base * 0.028,
-					wbtc: base * 0.017,
-					aave: base * 0.007,
-				},
-				{
-					label: "Phase 2",
-					usdc: base * 0.26,
-					eth: base * 0.071,
-					wbtc: base * 0.043,
-					aave: base * 0.019,
-				},
-				{
-					label: "Phase 3",
-					usdc: base * 0.39,
-					eth: base * 0.149,
-					wbtc: base * 0.085,
-					aave: base * 0.043,
-				},
-				{
-					label: "Now",
-					usdc: base * 0.478,
-					eth: base * 0.224,
-					wbtc: base * 0.124,
-					aave: base * 0.072,
-				},
-			],
+				balance: number;
+				unitPrice: number | null;
+				holdings: Array<{
+					assetId: string;
+					chainLabel: string;
+					balance: number;
+				}>;
+			}
+		>();
+
+		for (const asset of walletAssets) {
+			const existing = grouped.get(asset.symbol);
+			if (existing) {
+				existing.balance += asset.walletBalance;
+				existing.holdings.push({
+					assetId: asset.id,
+					chainLabel: asset.chainLabel,
+					balance: asset.walletBalance,
+				});
+				continue;
+			}
+
+			grouped.set(asset.symbol, {
+				symbol: asset.symbol,
+				label: asset.symbol,
+				balance: asset.walletBalance,
+				unitPrice: tokenPrices.data?.prices?.[asset.symbol] ?? null,
+				holdings: [
+					{
+						assetId: asset.id,
+						chainLabel: asset.chainLabel,
+						balance: asset.walletBalance,
+					},
+				],
+			});
+		}
+
+		return Array.from(grouped.values()).map((asset, index) => ({
+			...asset,
+			seriesKey: `series-${asset.symbol.toLowerCase()}-${index}`,
+			color: WALLET_CHART_COLORS[index % WALLET_CHART_COLORS.length],
+			valueUsd:
+				typeof asset.unitPrice === "number"
+					? asset.balance * asset.unitPrice
+					: null,
+		}));
+	}, [tokenPrices.data?.prices, walletAssets]);
+	const chartSeriesAssets = useMemo(
+		() =>
+			walletChartAssets.filter(
+				(asset) =>
+					(tokenHistory.data?.history?.[asset.symbol]?.length ?? 0) > 0,
+			),
+		[tokenHistory.data?.history, walletChartAssets],
+	);
+	const selectedChartAsset = useMemo(() => {
+		if (chartSeriesAssets.length === 0) return null;
+		return (
+			chartSeriesAssets.find(
+				(asset) => asset.symbol === selectedChartAssetSymbol,
+			) ?? chartSeriesAssets[0]
+		);
+	}, [chartSeriesAssets, selectedChartAssetSymbol]);
+	useEffect(() => {
+		if (chartSeriesAssets.length === 0) {
+			setSelectedChartAssetSymbol(null);
+			return;
+		}
+
+		if (
+			selectedChartAssetSymbol &&
+			chartSeriesAssets.some(
+				(asset) => asset.symbol === selectedChartAssetSymbol,
+			)
+		) {
+			return;
+		}
+
+		setSelectedChartAssetSymbol(chartSeriesAssets[0].symbol);
+	}, [chartSeriesAssets, selectedChartAssetSymbol]);
+	const chartConfig = useMemo(
+		() =>
+			selectedChartAsset
+				? ({
+						[selectedChartAsset.seriesKey]: {
+							label: selectedChartAsset.label,
+							color: selectedChartAsset.color,
+						},
+					} satisfies ChartConfig)
+				: ({} satisfies ChartConfig),
+		[selectedChartAsset],
+	);
+	const chartData = useMemo(() => {
+		if (!selectedChartAsset) {
+			return [];
+		}
+
+		const rows = new Map<number, Record<string, number | string>>();
+		const history = tokenHistory.data?.history ?? {};
+		const labelFormatter = new Intl.DateTimeFormat("en-US", {
+			month: selectedRange === "1D" ? undefined : "short",
+			day:
+				selectedRange === "1D" || selectedRange === "1W" || selectedRange === "1M"
+					? "numeric"
+					: undefined,
+			hour: selectedRange === "1D" ? "2-digit" : undefined,
+		});
+
+		const series = history[selectedChartAsset.symbol] ?? [];
+		for (const point of series) {
+			const existing = rows.get(point.timestamp) ?? {
+				timestamp: point.timestamp,
+				label: labelFormatter.format(new Date(point.timestamp)),
+			};
+			existing[selectedChartAsset.seriesKey] =
+				point.priceUsd * selectedChartAsset.balance;
+			existing[`${selectedChartAsset.seriesKey}Balance`] =
+				selectedChartAsset.balance;
+			existing[`${selectedChartAsset.seriesKey}Price`] = point.priceUsd;
+			existing[`${selectedChartAsset.seriesKey}Symbol`] =
+				selectedChartAsset.symbol;
+			existing[`${selectedChartAsset.seriesKey}Holdings`] = JSON.stringify(
+				selectedChartAsset.holdings,
+			);
+			rows.set(point.timestamp, existing);
+		}
+
+		return Array.from(rows.values()).sort(
+			(left, right) =>
+				Number(left.timestamp ?? 0) - Number(right.timestamp ?? 0),
+		);
+	}, [selectedChartAsset, selectedRange, tokenHistory.data?.history]);
+	const selectedChartAssetValueUsd = useMemo(
+		() => selectedChartAsset?.valueUsd ?? 0,
+		[selectedChartAsset],
+	);
+	const totalVaultValueUsd = useMemo(
+		() =>
+			trackedVaultPositions.reduce((sum, position) => {
+				const vaultPosition =
+					multichainVaultPositions.data?.positions?.[position.key];
+				const unitPrice = tokenPrices.data?.prices?.[position.symbol] ?? null;
+				if (!vaultPosition || typeof unitPrice !== "number") {
+					return sum;
+				}
+
+				return sum + vaultPosition.assets * unitPrice;
+			}, 0),
+		[
+			multichainVaultPositions.data?.positions,
+			tokenPrices.data?.prices,
+			trackedVaultPositions,
+		],
+	);
+	const hasVaultValue = useMemo(
+		() =>
+			trackedVaultPositions.some((position) => {
+				const vaultPosition =
+					multichainVaultPositions.data?.positions?.[position.key];
+				const unitPrice = tokenPrices.data?.prices?.[position.symbol] ?? null;
+				return Boolean(
+					vaultPosition &&
+						vaultPosition.assets > 0 &&
+						typeof unitPrice === "number",
+				);
+			}),
+		[
+			multichainVaultPositions.data?.positions,
+			tokenPrices.data?.prices,
+			trackedVaultPositions,
+		],
+	);
+	const portfolioRangeDelta = useMemo(() => {
+		if (!selectedChartAsset) return null;
+		if (chartData.length < 2) return null;
+		const start = Number(
+			(chartData[0] as Record<string, number | string>)[
+				selectedChartAsset.seriesKey
+			] ?? 0,
+		);
+		const end = Number(
+			(chartData[chartData.length - 1] as Record<string, number | string>)[
+				selectedChartAsset.seriesKey
+			] ?? 0,
+		);
+		if (start === 0) return null;
+		return {
+			amount: end - start,
+			percent: ((end - start) / start) * 100,
 		};
-		return series[selectedRange];
-	}, [selectedRange, totalWalletStableBalance]);
+	}, [chartData, selectedChartAsset]);
+	const hasWalletChartAssets = walletChartAssets.length > 0;
+	const isChartLoading =
+		hasWalletChartAssets &&
+		(tokenPrices.isPending ||
+			tokenHistory.isPending ||
+			tokenHistory.isFetching ||
+			(selectedChartAsset !== null && chartData.length === 0));
+	const greeting = greetingQuery.data?.greeting ?? "Hello";
 
 	const selectedDepositUsd = Number(depositAmount || 0) || 0;
 	const selectedDepositApy =
@@ -853,21 +871,22 @@ export default function DashboardPage() {
 						<div className="flex flex-col gap-5">
 							<div>
 								<h1 className="text-[26px] font-semibold tracking-tight text-foreground md:text-[34px]">
-									Good evening.
+									{greeting}.
 								</h1>
 							</div>
 
 							<div>
 								<div className="text-[36px] font-semibold tracking-tight text-foreground md:text-[44px]">
-									$
-									{totalWalletStableBalance.toLocaleString(undefined, {
-										minimumFractionDigits: 2,
-										maximumFractionDigits: 2,
-									})}
+									{hasVaultValue
+										? `$${totalVaultValueUsd.toLocaleString(undefined, {
+												minimumFractionDigits: 2,
+												maximumFractionDigits: 2,
+											})}`
+										: "$0.00"}
 								</div>
 								<div className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-									Wallet stable balance
-									<MetricTooltip text="Approximate connected-wallet balance across tracked stable assets available to deposit.">
+									Vault balance
+									<MetricTooltip text="Approximate value currently deposited inside Kabon vaults across supported chains, using live market pricing when available.">
 										<Info className="size-3.5" />
 									</MetricTooltip>
 								</div>
@@ -877,7 +896,7 @@ export default function DashboardPage() {
 								<div className="flex items-center justify-between py-2.5 text-sm">
 									<div className="flex items-center gap-1.5 text-muted-foreground">
 										Wallet assets
-										<MetricTooltip text="How many tracked assets with a non-zero balance were detected in the connected wallet on the current chain.">
+										<MetricTooltip text="How many tracked assets with a non-zero balance were detected in the connected wallet across supported chains.">
 											<Info className="size-3.5" />
 										</MetricTooltip>
 									</div>
@@ -937,120 +956,223 @@ export default function DashboardPage() {
 													Depositable assets
 												</p>
 												<p className="mt-1 text-xs text-muted-foreground/75">
-													Wallet balances on the current chain, paired with live
-													Arbitrum APY and liquidity context.
+													Wallet balances across supported chains, paired with
+													live pricing and deposit context.
 												</p>
 											</div>
 										</div>
-										<div className="flex items-center justify-end gap-1">
-											{RANGE_OPTIONS.map((range) => (
-												<button
-													key={range}
-													type="button"
-													onClick={() => setSelectedRange(range)}
-													className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
-														selectedRange === range
-															? "bg-foreground/10 text-foreground"
-															: "text-muted-foreground hover:text-foreground"
-													}`}
-												>
-													{range}
-												</button>
-											))}
+										<div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+											<div className="flex flex-wrap items-center gap-1">
+												{chartSeriesAssets.map((asset) => (
+													<button
+														key={asset.symbol}
+														type="button"
+														onClick={() =>
+															setSelectedChartAssetSymbol(asset.symbol)
+														}
+														className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+															selectedChartAsset?.symbol === asset.symbol
+																? "bg-foreground/10 text-foreground"
+																: "text-muted-foreground hover:text-foreground"
+														}`}
+													>
+														<span
+															className="size-2 rounded-full"
+															style={{ backgroundColor: asset.color }}
+														/>
+														{asset.label}
+													</button>
+												))}
+											</div>
+											<div className="flex items-center justify-end gap-1">
+												{RANGE_OPTIONS.map((range) => (
+													<button
+														key={range}
+														type="button"
+														onClick={() => setSelectedRange(range)}
+														className={`rounded-full px-2.5 py-1 text-xs font-semibold transition-colors ${
+															selectedRange === range
+																? "bg-foreground/10 text-foreground"
+																: "text-muted-foreground hover:text-foreground"
+														}`}
+													>
+														{range}
+													</button>
+												))}
+											</div>
 										</div>
 									</div>
 									<div className="px-3 pb-3 md:px-4 md:pb-4">
-										<ChartContainer
-											config={chartConfig}
-											className="min-h-[240px] w-full"
-										>
-											<LineChart
-												accessibilityLayer
-												data={chartData}
-												margin={{ left: 4, right: 8, top: 8, bottom: 8 }}
-											>
-												<CartesianGrid
-													vertical={false}
-													stroke="rgba(255,255,255,0.06)"
-												/>
-												<XAxis
-													dataKey="label"
-													axisLine={false}
-													tickLine={false}
-													tickMargin={10}
-													tick={{
-														fill: "rgba(255,255,255,0.46)",
-														fontSize: 11,
-													}}
-												/>
-												<YAxis
-													hide
-													domain={["dataMin - 500", "dataMax + 500"]}
-												/>
-												<ChartTooltip
-													cursor={false}
-													content={
-														<ChartTooltipContent
-															indicator="dot"
-															formatter={(value, name) => (
-																<div className="flex w-full items-center justify-between gap-3">
-																	<span className="text-muted-foreground">
-																		{chartConfig[
-																			name as keyof typeof chartConfig
-																		]?.label ?? name}
-																	</span>
-																	<span className="font-medium text-foreground">
-																		$
-																		{Number(value).toLocaleString(undefined, {
-																			minimumFractionDigits: 2,
-																			maximumFractionDigits: 2,
-																		})}
-																	</span>
-																</div>
-															)}
-														/>
-													}
-												/>
-												<Line
-													type="monotone"
-													dataKey="usdc"
-													stroke="var(--color-usdc)"
-													strokeWidth={2.2}
-													dot={false}
-													activeDot={{ r: 4, fill: "var(--color-usdc)" }}
-												/>
-												<Line
-													type="monotone"
-													dataKey="eth"
-													stroke="var(--color-eth)"
-													strokeWidth={2.2}
-													dot={false}
-													activeDot={{ r: 4, fill: "var(--color-eth)" }}
-												/>
-												<Line
-													type="monotone"
-													dataKey="wbtc"
-													stroke="var(--color-wbtc)"
-													strokeWidth={2.2}
-													dot={false}
-													activeDot={{ r: 4, fill: "var(--color-wbtc)" }}
-												/>
-												<Line
-													type="monotone"
-													dataKey="aave"
-													stroke="var(--color-aave)"
-													strokeWidth={2.2}
-													dot={false}
-													activeDot={{ r: 4, fill: "var(--color-aave)" }}
-												/>
-											</LineChart>
-										</ChartContainer>
-										<div className="flex flex-wrap items-center gap-4 border-t border-border/70 px-3 pt-4 text-sm md:px-4">
-											<LegendChip color="#8b7eff" label="USDC" />
-											<LegendChip color="#5ec6ff" label="ETH" />
-											<LegendChip color="#f59e0b" label="WBTC" />
-											<LegendChip color="#d38cf5" label="AAVE" />
+										<div className="px-1 pb-3 text-xs text-muted-foreground">
+											{selectedChartAsset && chartData.length > 0
+												? `${selectedChartAsset.label} position: $${selectedChartAssetValueUsd.toLocaleString(undefined, {
+														minimumFractionDigits: 2,
+														maximumFractionDigits: 2,
+													})}${portfolioRangeDelta ? ` | ${portfolioRangeDelta.percent >= 0 ? "+" : ""}${portfolioRangeDelta.percent.toFixed(2)}% over ${selectedRange}` : ""}`
+												: hasWalletChartAssets
+													? "Fetching market history for detected wallet assets..."
+													: "No wallet assets detected across supported chains yet."}
 										</div>
+										{chartData.length > 0 && selectedChartAsset ? (
+											<>
+												<ChartContainer
+													config={chartConfig}
+													className="min-h-[260px] w-full rounded-[20px] border border-border/70 bg-gradient-to-b from-muted/25 via-transparent to-transparent px-2 py-3"
+												>
+													<AreaChart
+														accessibilityLayer
+														data={chartData}
+														margin={{ left: 6, right: 10, top: 10, bottom: 8 }}
+													>
+														<defs>
+															<linearGradient
+																id={`fill-${selectedChartAsset.seriesKey}`}
+																x1="0"
+																y1="0"
+																x2="0"
+																y2="1"
+															>
+																<stop
+																	offset="5%"
+																	stopColor={selectedChartAsset.color}
+																	stopOpacity={0.28}
+																/>
+																<stop
+																	offset="95%"
+																	stopColor={selectedChartAsset.color}
+																	stopOpacity={0.04}
+																/>
+															</linearGradient>
+														</defs>
+														<CartesianGrid
+															vertical={false}
+															stroke="rgba(255,255,255,0.06)"
+														/>
+														<XAxis
+															dataKey="label"
+															axisLine={false}
+															tickLine={false}
+															tickMargin={12}
+															minTickGap={24}
+															tick={{
+																fill: "rgba(255,255,255,0.46)",
+																fontSize: 11,
+															}}
+														/>
+														<YAxis
+															hide
+															domain={([dataMin, dataMax]) => {
+																const min = Number(dataMin ?? 0);
+																const max = Number(dataMax ?? 0);
+																const spread = Math.max(max - min, max * 0.08, 1);
+																return [
+																	Math.max(0, min - spread * 0.5),
+																	max + spread * 0.5,
+																];
+															}}
+														/>
+														<ChartTooltip
+															cursor={false}
+															content={
+																<ChartTooltipContent
+																	indicator="dot"
+																	formatter={(value, name, item) => {
+																		const assetKey = String(item.dataKey ?? name);
+																		const balance = Number(
+																			item.payload?.[`${assetKey}Balance`] ?? 0,
+																		);
+																		const spotPrice = Number(
+																			item.payload?.[`${assetKey}Price`] ?? 0,
+																		);
+																		const symbol = String(
+																			item.payload?.[`${assetKey}Symbol`] ?? name,
+																		);
+																		const holdings = JSON.parse(
+																			String(
+																				item.payload?.[`${assetKey}Holdings`] ?? "[]",
+																			),
+																		) as Array<{
+																			assetId: string;
+																			chainLabel: string;
+																			balance: number;
+																		}>;
+
+																		return (
+																			<div className="flex w-full items-start justify-between gap-3">
+																				<div className="flex flex-col gap-1">
+																					<span className="text-muted-foreground">
+																						{chartConfig[
+																							name as keyof typeof chartConfig
+																						]?.label ?? name}
+																					</span>
+																					<span className="text-[11px] text-muted-foreground/80">
+																						{formatWalletBalance(balance)} {symbol} @ $
+																						{spotPrice.toLocaleString(undefined, {
+																							minimumFractionDigits: 2,
+																							maximumFractionDigits: 2,
+																						})}
+																					</span>
+																					{holdings.length > 1 ? (
+																						<div className="flex flex-col gap-0.5 text-[10px] text-muted-foreground/70">
+																							{holdings.map((holding) => (
+																								<span key={holding.assetId}>
+																									{holding.chainLabel}:{" "}
+																									{formatWalletBalance(holding.balance)} {symbol}
+																								</span>
+																							))}
+																						</div>
+																					) : null}
+																				</div>
+																				<span className="font-medium text-foreground">
+																					$
+																					{Number(value).toLocaleString(undefined, {
+																						minimumFractionDigits: 2,
+																						maximumFractionDigits: 2,
+																					})}
+																				</span>
+																			</div>
+																		);
+																	}}
+																/>
+															}
+														/>
+														<Area
+															type="monotone"
+															dataKey={selectedChartAsset.seriesKey}
+															fill={`url(#fill-${selectedChartAsset.seriesKey})`}
+															fillOpacity={1}
+															stroke={selectedChartAsset.color}
+															strokeWidth={2.6}
+															dot={false}
+															activeDot={{
+																r: 5,
+																fill: selectedChartAsset.color,
+																stroke: "hsl(var(--background))",
+																strokeWidth: 2,
+															}}
+															connectNulls
+														/>
+													</AreaChart>
+												</ChartContainer>
+											</>
+										) : isChartLoading ? (
+											<div className="rounded-[20px] border border-border/70 bg-gradient-to-b from-muted/25 via-transparent to-transparent px-4 py-5">
+												<div className="flex h-[260px] flex-col justify-between">
+													{Array.from({ length: 4 }).map((_, index) => (
+														<Skeleton
+															key={index}
+															className="h-px w-full rounded-full"
+														/>
+													))}
+												</div>
+											</div>
+										) : (
+											<div className="flex min-h-[240px] items-center justify-center rounded-2xl border border-dashed border-border/70 text-sm text-muted-foreground">
+												{hasWalletChartAssets
+													? "Market history is unavailable for the selected assets right now."
+													: "Connect a wallet with supported assets to see price history."}
+											</div>
+										)}
 									</div>
 								</CardContent>
 							</Card>
@@ -1065,8 +1187,8 @@ export default function DashboardPage() {
 										Wallet assets
 									</CardTitle>
 									<p className="mt-1 text-sm text-muted-foreground">
-										Assets detected in the connected wallet, enriched with live
-										Arbitrum yield data
+										Assets detected in the connected wallet across supported
+										chains, enriched with live pricing and deposit context
 									</p>
 								</div>
 							</div>

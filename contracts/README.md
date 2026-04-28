@@ -185,6 +185,50 @@ Example upgrade parameter file:
 }
 ```
 
+### Supported-chain vault deployment script
+
+For the hackathon flow, the fastest path is now the supported-chain deploy script:
+
+```bash
+cd contracts
+DEPLOY_ASSET=USDC npx hardhat run scripts/deploy-supported-vault.ts --network arbitrumSepolia
+```
+
+That script will:
+
+1. deploy a new `YieldPilotVault` implementation
+2. deploy a new `TransparentUpgradeableProxy`
+3. initialize the proxy-backed vault for the selected asset
+4. configure the withdrawal fee
+5. write the deployed vault address into [web/lib/generated/vault-addresses.json](C:\Users\hp\Desktop\arbs-london\web\lib\generated\vault-addresses.json)
+
+Current supported networks for the script:
+
+- `arbitrum`
+- `arbitrumSepolia`
+- `robinhoodChainTestnet`
+
+Current supported assets for the script are tracked in [contracts/config/supported-assets.ts](C:\Users\hp\Desktop\arbs-london\contracts\config\supported-assets.ts).
+
+Required environment variables for remote deploys:
+
+```bash
+ARBITRUM_RPC_URL=
+ARBITRUM_SEPOLIA_RPC_URL=
+ROBINHOOD_CHAIN_TESTNET_RPC_URL=
+DEPLOYER_PRIVATE_KEY=
+```
+
+Examples:
+
+```bash
+# Arbitrum Sepolia USDC vault
+DEPLOY_ASSET=USDC npx hardhat run scripts/deploy-supported-vault.ts --network arbitrumSepolia
+
+# Robinhood Chain Testnet AMZN vault
+DEPLOY_ASSET=AMZN npx hardhat run scripts/deploy-supported-vault.ts --network robinhoodChainTestnet
+```
+
 ## Test Coverage
 
 The current suite covers:
@@ -218,6 +262,12 @@ The current suite covers:
 - [OpenZeppelin ERC-4626 documentation](https://docs.openzeppelin.com/contracts/5.x/erc4626)
 
 ## Hackathon Smart Contract Summary
+
+Status checked on April 27, 2026:
+
+- the contract suite passes locally
+- deposit, withdraw, allocation, unwind, upgrade, and guardrail behavior are covered in tests
+- this workspace is ahead of the current deployed-demo state; the remaining gap is live deployment and frontend wiring, not base vault behavior
 
 ### Why This Contract Design Fits Judging
 

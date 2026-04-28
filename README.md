@@ -1,6 +1,7 @@
 # Kabon
 
-Kabon is a shared-vault DeFi product focused on making onchain yield allocation easier to use. Users deposit a supported asset into a vault, receive ERC-4626 vault shares as their receipt, and rely on the vault to handle strategy deployment and withdrawal unwinds behind the scenes.
+Kabon is a policy-driven DeFi treasury copilot for Arbitrum. Users deposit a supported asset into a vault, receive ERC-4626 vault shares as their receipt, and use a guided product flow to evaluate allocation opportunities, review recommendation logic, and withdraw with clearer unwind expectations.
+
 
 The product is Arbitrum-first today, with frontend wallet support expanded to include Robinhood Chain testnet so the app can speak credibly to tokenized asset and RWA workflows as that ecosystem opens up.
 
@@ -8,6 +9,8 @@ This repository contains two workspaces:
 
 - [contracts](C:\Users\hp\Desktop\arbs-london\contracts): Hardhat 3 smart contracts, proxy deployment modules, and tests
 - [web](C:\Users\hp\Desktop\arbs-london\web): Next.js frontend, wallet integration, and app-facing API routes
+
+Hackathon-ready pitch copy lives in [PITCH.md](C:\Users\hp\Desktop\arbs-london\PITCH.md).
 
 ## Product Model
 
@@ -49,13 +52,28 @@ See [contracts/README.md](C:\Users\hp\Desktop\arbs-london\contracts\README.md) f
 
 The frontend workspace currently includes:
 
-- landing and product navigation
-- dashboard, activity, recommendation, and withdraw views
+- a primary home/dashboard experience that combines wallet balances, deposit actions, and copilot recommendations
 - wallet connection through Reown AppKit
+- live Arbitrum market, protocol, and opportunity data
+- a deterministic recommendation engine exposed through app API routes
 - Arbitrum-focused market data plus Robinhood Chain testnet wallet support
-- app routes and API routes for asset, protocol, and recommendation data
+- protocol explorer and opportunity detail pages
+- placeholder activity and withdraw routes for post-deployment indexing and queue UX
 
 See [web/README.md](C:\Users\hp\Desktop\arbs-london\web\README.md) for frontend setup details.
+
+## Current Demo Status
+
+Status checked on April 27, 2026:
+
+- wallet connect is implemented
+- vault deposit flow is implemented in the homepage flow when supported env vars and vault addresses are configured
+- live protocol and opportunity browsing is implemented for Arbitrum
+- recommendation generation is implemented today as a deterministic scoring engine over live market data
+- copilot UI is implemented, but it is not yet a true LLM-backed agent workflow
+- standalone policy and recommendation pages are not live right now; those routes redirect to the homepage experience
+- withdraw and activity routes are still placeholder UX pending live indexing / queue integration
+- deployment, production addresses, and full end-to-end live demo wiring are still pending
 
 ## Local Development
 
@@ -106,7 +124,7 @@ It should still be treated as a project under active development rather than a f
 
 ### One-line Pitch
 
-Kabon is an agentic vault copilot that helps users and DAOs deposit once, auto-allocate across vetted strategies, and withdraw safely with transparent unwind logic on Arbitrum, with Robinhood Chain support.
+Kabon is a policy-driven vault copilot that helps users and DAOs deposit once, evaluate vetted yield routes, and withdraw with transparent unwind logic on Arbitrum, with Robinhood Chain support as an RWA expansion path.
 
 ### Problem
 
@@ -118,8 +136,19 @@ Kabon is an agentic vault copilot that helps users and DAOs deposit once, auto-a
 
 - single vault deposit flow with ERC-4626 shares as the user receipt
 - strategy deployment and unwind queue handled at vault/operator layer
-- agentic recommendation and policy-driven execution path in the app UX
+- recommendation and policy-driven execution framing in the app UX
 - clearer withdrawal expectations when recalls are needed
+
+### Requirement Fit Snapshot
+
+- `Landing / product overview`: mostly covered in the homepage flow
+- `Create policy`: partially covered through copilot modes today, but not yet a dedicated policy builder
+- `Vault dashboard`: covered in the homepage/dashboard experience
+- `Recommendation details`: covered inline through copilot signals and recommendation detail UI
+- `Withdraw flow`: contract behavior exists, but the dedicated frontend page is still mostly a placeholder
+- `Activity history`: not complete yet
+- `AI layer`: recommendation logic exists, but a true LLM-backed copilot has not been added yet
+- `Deployment`: not complete yet
 
 ### Judging Criteria Mapping
 
@@ -132,9 +161,9 @@ Kabon is an agentic vault copilot that helps users and DAOs deposit once, auto-a
 
 1. connect wallet and select supported Arbitrum chain
 2. deposit into the vault-backed flow
-3. show recommendation card and rationale (APY/liquidity/risk context)
-4. execute allocation action and show resulting transaction state
-5. walk through withdrawal path including idle-liquidity-first and strategy recall behavior
+3. show the Kabon Copilot recommendation and rationale (APY/liquidity/risk context)
+4. open the protocol explorer to validate the recommended venue against live market data
+5. explain that allocation execution, withdrawal queue UX, and indexed activity are the next deployment-phase steps
 
 ### Submission Checklist
 
@@ -142,3 +171,22 @@ Kabon is an agentic vault copilot that helps users and DAOs deposit once, auto-a
 - at least one Robinhood Chain-facing path included in the user flow
 - demo video link, deployment addresses, and setup steps documented
 - test commands and expected outputs documented for reviewers
+
+Current note on April 27, 2026: Robinhood Chain support is already present in wallet/network readiness, but deployment addresses, live withdrawal indexing, and the stronger AI layer still need to be completed before final submission.
+
+## Deployment + Address Wiring
+
+There is now a supported deploy script in the contracts workspace:
+
+```bash
+cd contracts
+DEPLOY_ASSET=USDC npx hardhat run scripts/deploy-supported-vault.ts --network arbitrumSepolia
+```
+
+That script writes frontend-readable vault addresses into:
+
+- [web/lib/generated/vault-addresses.json](C:\Users\hp\Desktop\arbs-london\web\lib\generated\vault-addresses.json)
+
+Official Robinhood Chain testnet stock-token addresses and official Circle USDC addresses are tracked in:
+
+- [contracts/config/supported-assets.ts](C:\Users\hp\Desktop\arbs-london\contracts\config\supported-assets.ts)

@@ -30,6 +30,24 @@ export default defineConfig({
     },
   },
   networks: {
+    arbitrum: {
+      type: "http",
+      chainType: "generic",
+      url: configVariable("ARBITRUM_RPC_URL"),
+      accounts: [configVariable("DEPLOYER_PRIVATE_KEY")],
+    },
+    arbitrumSepolia: {
+      type: "http",
+      chainType: "generic",
+      url: configVariable("ARBITRUM_SEPOLIA_RPC_URL"),
+      accounts: [configVariable("DEPLOYER_PRIVATE_KEY")],
+    },
+    robinhoodChainTestnet: {
+      type: "http",
+      chainType: "op",
+      url: configVariable("ROBINHOOD_CHAIN_TESTNET_RPC_URL"),
+      accounts: [configVariable("DEPLOYER_PRIVATE_KEY")],
+    },
     hardhatMainnet: {
       type: "edr-simulated",
       chainType: "l1",

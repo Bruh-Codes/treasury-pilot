@@ -671,8 +671,20 @@ describe("YieldPilotVault", async function () {
     assert.equal(await vault.read.pendingOwner(), "0x0000000000000000000000000000000000000000");
 
     await assert.rejects(
-      vault.write.renounceOwnership({
-        account: bob.account,
+      bob.sendTransaction({
+        address: vault.address,
+        data: encodeFunctionData({
+          abi: [
+            {
+              inputs: [],
+              name: "renounceOwnership",
+              outputs: [],
+              stateMutability: "nonpayable",
+              type: "function",
+            },
+          ],
+          functionName: "renounceOwnership",
+        }),
       }),
     );
   });

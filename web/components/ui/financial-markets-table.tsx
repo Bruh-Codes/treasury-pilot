@@ -18,6 +18,7 @@ export interface FinancialAssetRow {
 	id: string;
 	name: string;
 	symbol: string;
+	chainLabel?: string;
 	walletBalance: string;
 	deposited: string;
 	apy: string;
@@ -26,6 +27,10 @@ export interface FinancialAssetRow {
 	supported: boolean;
 	iconClass: string;
 	iconUrl?: string;
+	copilot?: {
+		state: "loading" | "actionable" | "hold" | "blocked" | "error";
+		label: string;
+	};
 }
 
 interface FinancialMarketsTableProps {
@@ -33,6 +38,7 @@ interface FinancialMarketsTableProps {
 	rows: FinancialAssetRow[];
 	onRowSelect?: (rowId: string) => void;
 	onAction?: (rowId: string) => void;
+	onCopilotClick?: (rowId: string) => void;
 	className?: string;
 }
 
@@ -43,6 +49,7 @@ const TABLE_HEADERS = [
 	"APY",
 	"Total Deposits",
 	"Available Liquidity",
+	"Copilot",
 ] as const;
 
 export function FinancialMarketsTable({
@@ -50,6 +57,7 @@ export function FinancialMarketsTable({
 	rows,
 	onRowSelect,
 	onAction,
+	onCopilotClick,
 	className = "",
 }: FinancialMarketsTableProps) {
 	const [selectedRow, setSelectedRow] = useState<string | null>(
@@ -129,7 +137,7 @@ export function FinancialMarketsTable({
 							style={{
 								display: "grid",
 								gridTemplateColumns:
-									"240px minmax(92px,1fr) minmax(92px,1fr) minmax(72px,1fr) minmax(116px,1fr) minmax(120px,1fr) 74px",
+									"220px minmax(90px,1fr) minmax(90px,1fr) minmax(72px,1fr) minmax(108px,1fr) minmax(112px,1fr) minmax(150px,1fr) 74px",
 								columnGap: "10px",
 							}}
 						>
@@ -179,27 +187,34 @@ export function FinancialMarketsTable({
 												style={{
 													display: "grid",
 													gridTemplateColumns:
-														"240px minmax(92px,1fr) minmax(92px,1fr) minmax(72px,1fr) minmax(116px,1fr) minmax(120px,1fr) 74px",
+														"220px minmax(90px,1fr) minmax(90px,1fr) minmax(72px,1fr) minmax(108px,1fr) minmax(112px,1fr) minmax(150px,1fr) 74px",
 													columnGap: "10px",
 												}}
 											>
 												<div className="flex items-center gap-3">
 													<AssetAvatar row={row} />
-													<div className="min-w-0">
-														<div className="truncate font-medium text-foreground/95">
-															{row.name}
-														</div>
-														<div className="mt-1 text-xs text-muted-foreground/75">
-															{row.symbol}
-														</div>
-													</div>
-												</div>
+									<div className="min-w-0">
+										<div className="truncate font-medium text-foreground/95">
+											{row.name}
+										</div>
+										<div className="mt-1 text-xs text-muted-foreground/75">
+											{row.symbol}
+											{row.chainLabel ? ` • ${row.chainLabel}` : ""}
+										</div>
+									</div>
+								</div>
 
 												<TableValue value={row.walletBalance} />
 												<TableValue value={row.deposited} />
 												<TableValue value={row.apy} strong />
 												<TableValue value={row.totalDeposits} />
 												<TableValue value={row.availableLiquidity} />
+												<div className="flex items-center">
+													<CopilotPill
+														row={row}
+														onClick={() => onCopilotClick?.(row.id)}
+													/>
+												</div>
 
 												<div className="flex items-center justify-end">
 													<DropdownMenu>
@@ -239,6 +254,61 @@ export function FinancialMarketsTable({
 				</div>
 			</div>
 		</div>
+	);
+}
+
+function CopilotPill({
+	row,
+	onClick,
+}: {
+	row: FinancialAssetRow;
+	onClick: () => void;
+}) {
+	const copilot = row.copilot;
+	const base =
+		"inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium transition-colors";
+
+	if (!copilot) {
+		return (
+			<button
+				type="button"
+				onClick={onClick}
+				className={cn(
+					base,
+					"border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/30 hover:text-foreground cursor-pointer",
+				)}
+			>
+				Not analyzed
+			</button>
+		);
+	}
+
+	if (copilot.state === "loading") {
+		return (
+			<span
+				className={cn(
+					base,
+					"border-border/60 bg-muted/30 text-muted-foreground",
+				)}
+			>
+				Analyzing...
+			</span>
+		);
+	}
+
+	const tone =
+		copilot.state === "actionable"
+			? "border-emerald-500/35 bg-emerald-500/12 text-emerald-300"
+			: copilot.state === "hold"
+				? "border-sky-500/35 bg-sky-500/12 text-sky-300"
+				: copilot.state === "blocked"
+					? "border-amber-500/35 bg-amber-500/12 text-amber-300"
+					: "border-red-500/35 bg-red-500/12 text-red-300";
+
+	return (
+		<button type="button" onClick={onClick} className={cn(base, tone)}>
+			{copilot.label}
+		</button>
 	);
 }
 
