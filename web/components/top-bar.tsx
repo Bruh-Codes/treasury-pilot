@@ -9,6 +9,7 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { reownEnabled } from "@/lib/reown";
 import { toast } from "sonner";
 import Link from "next/link";
+import AppKitButton from "./ui/appkit-button";
 
 export function TopBar() {
 	const { open } = useAppKit();
@@ -41,21 +42,7 @@ export function TopBar() {
 			</Button>
 			<div className="ml-auto flex items-center gap-2.5">
 				{address ? (
-					<Button
-						variant="secondary"
-						size="lg"
-						className="h-10 rounded-full px-3 text-sm"
-						onClick={() => open()}
-					>
-						<Avatar className="size-7">
-							<AvatarFallback className="bg-[radial-gradient(circle_at_35%_35%,#3772ff_0%,#7c3aed_100%)] text-white">
-								0x
-							</AvatarFallback>
-						</Avatar>
-						<span className="font-mono text-xs">
-							{`${address.slice(0, 6)}...${address.slice(-4)}`}
-						</span>
-					</Button>
+					<AppKitButton />
 				) : (
 					<Button
 						size="lg"

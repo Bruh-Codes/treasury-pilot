@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { useTheme } from "next-themes";
 import { ArrowUpDown, CircleArrowDown, EllipsisVertical } from "lucide-react";
+
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -51,6 +52,9 @@ const TABLE_HEADERS = [
 	"Available Liquidity",
 	"Copilot",
 ] as const;
+
+const TABLE_GRID_TEMPLATE =
+	"minmax(260px,2.5fr) minmax(120px,1fr) minmax(92px,0.9fr) minmax(92px,0.9fr) minmax(130px,1.1fr) minmax(138px,1.1fr) minmax(160px,1.2fr) 52px";
 
 export function FinancialMarketsTable({
 	title = "Asset",
@@ -131,13 +135,12 @@ export function FinancialMarketsTable({
 		<div className={cn("w-full", className)}>
 			<div className="overflow-hidden">
 				<div className="overflow-x-auto">
-					<div className="min-w-[860px] xl:min-w-0">
+					<div className="min-w-[980px] xl:min-w-0">
 						<div
 							className="border-b border-border/30 bg-muted/15 px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/80"
 							style={{
 								display: "grid",
-								gridTemplateColumns:
-									"220px minmax(90px,1fr) minmax(90px,1fr) minmax(72px,1fr) minmax(108px,1fr) minmax(112px,1fr) minmax(150px,1fr) 74px",
+								gridTemplateColumns: TABLE_GRID_TEMPLATE,
 								columnGap: "10px",
 							}}
 						>
@@ -186,30 +189,30 @@ export function FinancialMarketsTable({
 												)}
 												style={{
 													display: "grid",
-													gridTemplateColumns:
-														"220px minmax(90px,1fr) minmax(90px,1fr) minmax(72px,1fr) minmax(108px,1fr) minmax(112px,1fr) minmax(150px,1fr) 74px",
+													gridTemplateColumns: TABLE_GRID_TEMPLATE,
 													columnGap: "10px",
 												}}
 											>
-												<div className="flex items-center gap-3">
+												<div className="flex min-w-0 items-center gap-3">
 													<AssetAvatar row={row} />
-									<div className="min-w-0">
-										<div className="truncate font-medium text-foreground/95">
-											{row.name}
-										</div>
-										<div className="mt-1 text-xs text-muted-foreground/75">
-											{row.symbol}
-											{row.chainLabel ? ` • ${row.chainLabel}` : ""}
-										</div>
-									</div>
-								</div>
+													<div className="min-w-0">
+														<div className="truncate font-medium text-foreground/95">
+															{row.name}
+														</div>
+														<div className="mt-1 text-xs text-muted-foreground/75">
+															{row.symbol}
+															{row.chainLabel ? ` | ${row.chainLabel}` : ""}
+														</div>
+													</div>
+												</div>
 
 												<TableValue value={row.walletBalance} />
 												<TableValue value={row.deposited} />
 												<TableValue value={row.apy} strong />
 												<TableValue value={row.totalDeposits} />
 												<TableValue value={row.availableLiquidity} />
-												<div className="flex items-center">
+
+												<div className="flex min-w-0 items-center">
 													<CopilotPill
 														row={row}
 														onClick={() => onCopilotClick?.(row.id)}
@@ -266,7 +269,7 @@ function CopilotPill({
 }) {
 	const copilot = row.copilot;
 	const base =
-		"inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium transition-colors";
+		"inline-flex max-w-full items-center rounded-full border px-2.5 py-1 text-xs font-medium transition-colors";
 
 	if (!copilot) {
 		return (
@@ -275,10 +278,10 @@ function CopilotPill({
 				onClick={onClick}
 				className={cn(
 					base,
-					"border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/30 hover:text-foreground cursor-pointer",
+					"cursor-pointer border-border/60 bg-muted/20 text-muted-foreground hover:bg-muted/30 hover:text-foreground",
 				)}
 			>
-				Not analyzed
+				<span className="truncate">Not analyzed</span>
 			</button>
 		);
 	}
@@ -291,7 +294,7 @@ function CopilotPill({
 					"border-border/60 bg-muted/30 text-muted-foreground",
 				)}
 			>
-				Analyzing...
+				<span className="truncate">Analyzing...</span>
 			</span>
 		);
 	}
@@ -307,14 +310,14 @@ function CopilotPill({
 
 	return (
 		<button type="button" onClick={onClick} className={cn(base, tone)}>
-			{copilot.label}
+			<span className="truncate">{copilot.label}</span>
 		</button>
 	);
 }
 
 function HeaderCell({ label }: { label: string }) {
 	return (
-		<div className="flex items-center gap-1.5 whitespace-nowrap">
+		<div className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
 			<span className="truncate">{label}</span>
 			<Button
 				variant="ghost"

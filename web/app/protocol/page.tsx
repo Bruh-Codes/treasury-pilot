@@ -101,7 +101,7 @@ function ProtocolPage() {
 		<div className="px-6 py-8 md:px-7 md:py-9">
 			<PageHeader
 				title="Protocol dashboard"
-				description="Live protocol and opportunity data for Arbitrum assets, ready for frontend filtering and AI recommendation inputs."
+				description="Live protocol and opportunity data for Arbitrum assets, ready for recommendation inputs."
 			/>
 
 			<Card className="mt-7 p-0">
@@ -201,7 +201,7 @@ function ProtocolPage() {
 											}
 										}}
 										className={cn(
-											"grid grid-cols-12 items-center gap-4 px-4 py-3.5 transition-colors hover:bg-muted/30",
+											"grid grid-cols-12 cursor-pointer items-center gap-4 px-4 py-3.5 transition-colors hover:bg-muted/30",
 										)}
 									>
 										<div className="col-span-4">
@@ -331,7 +331,10 @@ function ProtocolPageSkeleton() {
 
 				<div className="mt-7 grid grid-cols-2 overflow-hidden rounded-[20px] border border-border md:grid-cols-4">
 					{Array.from({ length: 4 }).map((_, index) => (
-						<div key={index} className="p-4 border-r border-border last:border-r-0">
+						<div
+							key={index}
+							className="p-4 border-r border-border last:border-r-0"
+						>
 							<div className="h-3 w-20 rounded bg-muted" />
 							<div className="mt-4 h-8 w-32 rounded bg-muted" />
 						</div>

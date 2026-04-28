@@ -1,6 +1,11 @@
 ﻿"use client";
 
-import { useMutation, useQuery, keepPreviousData } from "@tanstack/react-query";
+import {
+	keepPreviousData,
+	useMutation,
+	useQuery,
+	useQueryClient,
+} from "@tanstack/react-query";
 import { getBalance, readContracts } from "@wagmi/core";
 import { formatUnits, type Address, erc20Abi } from "viem";
 
@@ -59,6 +64,48 @@ export type MultichainVaultPositionMap = Record<
 	string,
 	{ shares: number; assets: number; chainId: number; symbol: string }
 >;
+export type CopilotAssetInput = {
+	id: string;
+	name: string;
+	symbol: string;
+	chainId: number;
+	chainLabel: string;
+	balance: number;
+	depositedBalance: number;
+	valueUsd: number | null;
+	unitPriceUsd: number | null;
+	supported: boolean;
+	apy: string;
+	totalDeposits: string;
+	availableLiquidity: string;
+};
+export type CopilotAnalysisItem = {
+	assetId: string;
+	name: string;
+	symbol: string;
+	chainLabel: string;
+	balance: number;
+	depositedBalance: number;
+	valueUsd: number | null;
+	unitPriceUsd: number | null;
+	status: "actionable" | "hold" | "blocked" | "error";
+	label: string;
+	summary: string;
+	expectedApy: number;
+	protocolName: string | null;
+	rationale: string;
+	warnings: string[];
+};
+export type CopilotAnalysisResponse = {
+	mode: "portfolio" | "asset";
+	title: string;
+	subtitle: string;
+	narrative: string;
+	bestOpportunity: CopilotAnalysisItem | null;
+	items: CopilotAnalysisItem[];
+	generatedAt: string;
+	source: "openai" | "fallback";
+};
 
 export function useAssetSummaries() {
 	return useQuery({
@@ -414,4 +461,37 @@ export function useRecommendationMutation() {
 	return useMutation({
 		mutationFn: fetchRecommendation,
 	});
+}
+
+export async function fetchCopilotAnalysis(input: {
+	mode: "portfolio" | "asset";
+	assets: CopilotAssetInput[];
+	focusAssetId?: string;
+}) {
+	const response = await fetch("/api/copilot-analysis", {
+		method: "POST",
+		headers: {
+			"content-type": "application/json",
+		},
+		body: JSON.stringify(input),
+	});
+
+	if (!response.ok) {
+		const json = (await response.json().catch(() => null)) as {
+			detail?: string;
+		} | null;
+		throw new Error(json?.detail ?? "Failed to analyze assets");
+	}
+
+	return (await response.json()) as CopilotAnalysisResponse;
+}
+
+export function useCopilotAnalysisMutation() {
+	return useMutation({
+		mutationFn: fetchCopilotAnalysis,
+	});
+}
+
+export function useYieldpilotQueryClient() {
+	return useQueryClient();
 }
