@@ -80,6 +80,9 @@ function AssetOpportunitiesPage() {
 	);
 	const assetDisplayName =
 		registryAsset?.name ?? assetSummary?.name ?? assetSymbol;
+	const isRobinhoodRwaAsset =
+		registryAsset?.chainKey === "robinhood-chain-testnet" &&
+		registryAsset.assetType === "tokenized-equity";
 	const assetIconUrl =
 		assetSymbol === "ETH"
 			? "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png"
@@ -211,8 +214,17 @@ function AssetOpportunitiesPage() {
 						</div>
 					</div>
 				}
-				description={`Live protocol and opportunity data for ${assetDisplayName} on Arbitrum.`}
+				description={
+					isRobinhoodRwaAsset
+						? `Live price history and deployment-readiness status for ${assetDisplayName}.`
+						: `Live protocol and opportunity data for ${assetDisplayName} on Arbitrum.`
+				}
 			/>
+			{isRobinhoodRwaAsset ? (
+				<div className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/8 px-4 py-3 text-sm text-amber-100/90">
+					Robinhood Chain currently exposes token contracts plus chain infrastructure and partner integrations, but Kabon does not yet have live whitelisted investment protocols for this stock token.
+				</div>
+			) : null}
 
 			<Card className="mt-7 p-0">
 				<div className="grid grid-cols-2 divide-x divide-y divide-border md:grid-cols-4 md:divide-y-0">
@@ -226,7 +238,11 @@ function AssetOpportunitiesPage() {
 						<Stat
 							label="Opportunities"
 							value={String(opportunities.length)}
-							hint={`Live Arbitrum opportunities for ${assetSymbol}.`}
+							hint={
+								isRobinhoodRwaAsset
+									? `Whitelisted deployable venues currently available for ${assetSymbol}.`
+									: `Live Arbitrum opportunities for ${assetSymbol}.`
+							}
 						/>
 					</div>
 					<div className="p-4">
@@ -376,8 +392,16 @@ function AssetOpportunitiesPage() {
 			<div className="mt-5 grid gap-4 lg:grid-cols-[1fr_300px]">
 				<Card>
 					<CardHead
-						title="Top live opportunities"
-						sub={`Current Arbitrum yield venues for ${assetSymbol}.`}
+						title={
+							isRobinhoodRwaAsset
+								? "Whitelisted deployment venues"
+								: "Top live opportunities"
+						}
+						sub={
+							isRobinhoodRwaAsset
+								? `Current approved venues Kabon can route ${assetSymbol} into.`
+								: `Current Arbitrum yield venues for ${assetSymbol}.`
+						}
 					/>
 
 					<div className="overflow-hidden rounded-[18px] border hairline">
@@ -410,7 +434,9 @@ function AssetOpportunitiesPage() {
 						<div className="divide-y divide-border">
 							{sortedOpportunities.length === 0 ? (
 								<div className="px-6 py-16 text-center text-sm text-muted-foreground">
-									No live opportunities are available right now.
+									{isRobinhoodRwaAsset
+										? `No whitelisted deployment venues are available for ${assetSymbol} yet. Kabon can price and track this token today, but it does not yet route it into approved protocols.`
+										: "No live opportunities are available right now."}
 								</div>
 							) : (
 								sortedOpportunities.slice(0, 8).map((opportunity) => (

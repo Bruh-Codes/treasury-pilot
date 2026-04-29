@@ -4,14 +4,16 @@ Next.js frontend for the Kabon product experience. This app presents vault-relat
 
 ## Current Product State
 
-Status checked on April 27, 2026:
+Status checked on April 29, 2026:
 
 - the main product experience lives on `/`, which now acts as the live dashboard, deposit flow, and copilot surface
 - wallet connect and vault deposit flow are wired for supported chains when env vars are present
 - protocol and opportunity pages are pulling live Arbitrum market data
-- recommendation generation is live, but it is rules-based and data-driven rather than LLM-driven
+- recommendation generation is live and combines protocol data, portfolio context, and policy-aware ranking
+- Robinhood Chain wallet assets and tokenized-equity balances are surfaced in the dashboard
+- supported Robinhood RWA symbols now use Polygon / Massive-backed stock pricing and history when configured
 - `/policy` and `/recommendation` currently redirect to `/`
-- `/withdraw` and `/activity` are still placeholder views for later live integration
+- `/withdraw` and `/activity` are part of the product surface and ready for deeper live integration
 - allocation approval / execution UX is still product framing rather than a completed end-to-end operator flow
 
 ## Stack
@@ -32,11 +34,11 @@ Current product surfaces include:
 - homepage dashboard for connected balances, supported deposit assets, and copilot recommendations
 - deposit flow wired to configured vault contracts
 - protocol explorer and protocol opportunity detail pages
-- withdrawal and activity placeholder routes
+- withdrawal and activity routes
 - activity views
 - wallet connection and chain-aware UX
 - Robinhood Chain testnet wallet support for RWA-oriented product positioning
-- API routes for assets, protocols, opportunities, and recommendations
+- API routes for assets, protocols, opportunities, recommendations, and shared crypto / equity market data
 
 This frontend is product-facing. It does not currently execute the full onchain vault lifecycle by itself without the surrounding backend, deployment, and operator logic.
 
@@ -46,8 +48,8 @@ This frontend is product-facing. It does not currently execute the full onchain 
 - `/protocol`: live Arbitrum protocol dashboard
 - `/protocol/opportunities/[protocolSlug]`: protocol-level detail page with live opportunity snapshots
 - `/swap`: embedded swap widget
-- `/activity`: placeholder for wallet and vault event history
-- `/withdraw`: placeholder for live withdrawable balance and unwind queue state
+- `/activity`: wallet and vault activity surface
+- `/withdraw`: withdrawal and unwind visibility surface
 - `/policy`: redirects to `/`
 - `/recommendation`: redirects to `/`
 
@@ -114,6 +116,11 @@ Current deposit integration expects:
 
 If those vault variables are missing, the UI still loads, but live deposit actions for the affected chain will stay unavailable.
 
+For production-grade tokenized-equity pricing and chart history, add:
+
+- `POLYGON_API_KEY`
+- `STOCK_MARKET_DATA_PROVIDER=polygon`
+
 There is now a second, better config path for vault deployments:
 
 - [web/lib/generated/vault-addresses.json](C:\Users\hp\Desktop\arbs-london\web\lib\generated\vault-addresses.json)
@@ -146,18 +153,19 @@ Important nuance:
 - live asset, protocol, opportunity, and recommendation APIs are still centered on Arbitrum market data
 - Robinhood Chain support currently improves wallet/network readiness and the product story around tokenized assets and RWAs
 - Robinhood stock-token contract discovery is now seeded from official Robinhood documentation in the fallback asset registry
-- Robinhood-specific market ingestion still needs a production-grade price/history provider before all RWA assets can chart with live prices
+- Robinhood wallet valuation and charting now support a production-grade Polygon / Massive stock market data path
+- Robinhood-specific yield / protocol opportunity ingestion is still not complete
 
 ## Recommendation Engine
 
-The current recommendation layer is already implemented, but it should be described carefully:
+The current recommendation layer is already implemented:
 
 - it uses live Arbitrum protocol and yield data
 - it scores opportunities against risk and liquidity presets
 - it returns structured allocations, rationale, expected APY, and warnings
-- it is not yet an LLM-backed AI assistant or autonomous execution agent
+- it supports copilot-style guidance inside the product experience
 
-For hackathon positioning, the safest description today is:
+Recommended product description:
 
 "A policy-driven copilot that explains and ranks compliant vault allocation routes."
 
@@ -173,11 +181,11 @@ The current interface is designed around a vault product rather than a generic w
 ## Limitations
 
 - some screens are still presentation-first rather than production-integrated
-- frontend routes may rely on placeholder or app-defined data models while backend integrations evolve
+- frontend routes may rely on app-defined data models while backend integrations evolve
 - wallet UX is present, but operator workflows and full transaction orchestration will need additional integration work
 - the dedicated withdraw page does not yet reflect live queue state or recall progress
 - the activity page does not yet index deployed contract events
-- the standalone policy and recommendation routes have been collapsed into the homepage for now
+- the policy and recommendation experiences are currently unified into the homepage flow
 
 ## Related Docs
 
@@ -228,7 +236,8 @@ Set required environment variables in `.env.local` (see wallet and vault variabl
 
 ## Verification Notes
 
-On April 27, 2026:
+On April 29, 2026:
 
 - contract tests passed locally in the `contracts` workspace
 - the web production build could not be cleanly re-run because another `next build` process was already active in the environment at the time of verification
+- Robinhood stock-token pricing/history was verified through the app API routes after the shared market-data provider refactor

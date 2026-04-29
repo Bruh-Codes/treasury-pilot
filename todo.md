@@ -4,11 +4,11 @@
 
 Kabon
 
-AI-assisted stablecoin treasury vault on Arbitrum.
+AI-assisted treasury vault on Arbitrum with a Robinhood Chain tokenized-equity expansion story.
 
 ## One-Line Pitch
 
-Users deposit USDC into a policy-controlled vault on Arbitrum, and an off-chain agent recommends how to allocate capital across whitelisted yield opportunities based on the user's risk and liquidity preferences.
+Users deposit a supported asset into a policy-controlled vault, and an off-chain agent recommends how to allocate capital across whitelisted yield opportunities based on the user's risk and liquidity preferences.
 
 ## Why This Can Win
 
@@ -498,13 +498,13 @@ This needs to feel polished and obvious.
 
 ## Winning MVP Checklist
 
-- [ ] User understands product in 20 seconds
+- [x] User understands product in 20 seconds
 - [x] Deposit works
-- [ ] Recommendation works
+- [x] Recommendation works
 - [ ] Allocation execution works
 - [x] Withdrawal story is clear and demoable
 - [x] Supported strategies are whitelisted and visible
-- [ ] UI explains risk and liquidity clearly
+- [x] UI explains risk and liquidity clearly
 - [ ] Smart contracts are clean and limited in scope
 - [ ] Demo feels like a real treasury tool
 
@@ -589,9 +589,20 @@ That clarity is part of what will make this feel strong enough to win.
 
 - [x] Reown wallet support for Arbitrum One, Arbitrum Sepolia, and Robinhood Chain testnet
 - [x] product positioning now supports both DeFi treasury flows and a Robinhood Chain RWA expansion story
-- [ ] deposit modal selects supported asset first, then routes internally to the correct vault
-- [ ] placeholder vault address in deposit UI replaced with chain-aware vault registry config
-- [ ] live onchain deposit flow replaces the current presentation-only modal submit
+- [x] deposit modal selects supported asset first, then routes internally to the correct vault
+- [x] placeholder vault address in deposit UI replaced with chain-aware vault registry config
+- [x] live onchain deposit flow replaces the current presentation-only modal submit
 - [ ] withdraw page upgraded from placeholder state to asset-aware vault integration
+- [x] Robinhood wallet assets render with symbol-specific icons and names
+- [x] Robinhood stock-token pricing and chart history use Polygon / Massive market data when configured
 - [ ] Robinhood-native market opportunities folded into live APIs
 - [ ] Robinhood Chain-specific recommendation logic once reliable market coverage exists
+
+## Current Buildathon Snapshot
+
+- [x] dashboard acts as the primary operating surface for balances, deposits, and opportunity context
+- [x] supported Robinhood RWA balances are visible in the wallet table
+- [x] deposited RWA positions can be valued through the shared token-pricing pipeline
+- [x] asset detail pages show stock-token names and logos instead of raw tickers
+- [ ] withdraw and activity routes still need production-grade integration
+- [ ] add a stronger partial-pricing fallback state if a future asset lacks a live quote

@@ -40,6 +40,10 @@ interface FinancialMarketsTableProps {
 	onRowSelect?: (rowId: string) => void;
 	onAction?: (rowId: string) => void;
 	onCopilotClick?: (rowId: string) => void;
+	onRowDoubleClick?: (rowId: string) => void;
+	actionLabel?: string;
+	emptyTitle?: string;
+	emptyDescription?: string;
 	className?: string;
 }
 
@@ -62,6 +66,10 @@ export function FinancialMarketsTable({
 	onRowSelect,
 	onAction,
 	onCopilotClick,
+	onRowDoubleClick,
+	actionLabel = "Deposit",
+	emptyTitle = "No wallet assets found",
+	emptyDescription = "Connect a wallet with supported assets on this chain to see depositable balances here.",
 	className = "",
 }: FinancialMarketsTableProps) {
 	const [selectedRow, setSelectedRow] = useState<string | null>(
@@ -159,11 +167,10 @@ export function FinancialMarketsTable({
 							{visibleRows.length === 0 ? (
 								<div className="flex min-h-[280px] flex-col items-center justify-center px-6 py-16 text-center">
 									<div className="text-lg font-medium text-foreground">
-										No wallet assets found
+										{emptyTitle}
 									</div>
 									<p className="mt-2 max-w-md text-sm text-muted-foreground">
-										Connect a wallet with supported assets on this chain to see
-										depositable balances here.
+										{emptyDescription}
 									</p>
 								</div>
 							) : (
@@ -175,6 +182,7 @@ export function FinancialMarketsTable({
 												role="button"
 												tabIndex={0}
 												onClick={() => handleRowSelect(row.id)}
+												onDoubleClick={() => onRowDoubleClick?.(row.id)}
 												onKeyDown={(event) => {
 													if (event.key === "Enter" || event.key === " ") {
 														event.preventDefault();
@@ -242,7 +250,7 @@ export function FinancialMarketsTable({
 																className="gap-2"
 															>
 																<CircleArrowDown />
-																Deposit
+																{actionLabel}
 															</DropdownMenuItem>
 														</DropdownMenuContent>
 													</DropdownMenu>

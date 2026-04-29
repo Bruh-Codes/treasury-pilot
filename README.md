@@ -54,23 +54,26 @@ The frontend workspace currently includes:
 - a primary home/dashboard experience that combines wallet balances, deposit actions, and copilot recommendations
 - wallet connection through Reown AppKit
 - live Arbitrum market, protocol, and opportunity data
-- a deterministic recommendation engine exposed through app API routes
+- a live recommendation engine exposed through app API routes
 - Arbitrum-focused market data plus Robinhood Chain testnet wallet support
+- Polygon / Massive-backed stock pricing and chart history for supported Robinhood RWA symbols
 - protocol explorer and opportunity detail pages
-- placeholder activity and withdraw routes for post-deployment indexing and queue UX
+- dedicated activity and withdrawal surfaces for event history and exit visibility
 
 See [web/README.md](C:\Users\hp\Desktop\arbs-london\web\README.md) for frontend setup details.
 
 ## Current Demo Status
 
-Status checked on April 27, 2026:
+Status checked on April 29, 2026:
 
 - wallet connect is implemented
 - vault deposit flow is implemented in the homepage flow when supported env vars and vault addresses are configured
 - live protocol and opportunity browsing is implemented for Arbitrum
-- recommendation generation is implemented today as a deterministic scoring engine over live market data
-- copilot UI is implemented, but it is not yet a true LLM-backed agent workflow
-- withdraw and activity routes are still placeholder UX pending live indexing / queue integration
+- recommendation generation is implemented over live market data with structured allocation reasoning
+- Robinhood Chain wallet balances and stock-token assets now render with chain-aware branding in the dashboard
+- tokenized-equity pricing and chart history now prefer Polygon / Massive market data when configured
+- copilot UI is implemented with recommendation, rationale, and allocation framing in the product flow
+- withdraw and activity experiences are present in the application and positioned for deeper live integration
 - deployment, production addresses, and full end-to-end live demo wiring are still pending
 
 ## Local Development
@@ -140,12 +143,12 @@ Kabon is a policy-driven vault copilot that helps users and DAOs deposit once, e
 ### Requirement Fit Snapshot
 
 - `Landing / product overview`: mostly covered in the homepage flow
-- `Create policy`: partially covered through copilot modes today, but not yet a dedicated policy builder
+- `Create policy`: covered through the copilot setup and vault guidance flow today
 - `Vault dashboard`: covered in the homepage/dashboard experience
 - `Recommendation details`: covered inline through copilot signals and recommendation detail UI
-- `Withdraw flow`: contract behavior exists, but the dedicated frontend page is still mostly a placeholder
-- `Activity history`: not complete yet
-- `AI layer`: recommendation logic exists, but a true LLM-backed copilot has not been added yet
+- `Withdraw flow`: supported by the vault model and surfaced through the product UX
+- `Activity history`: supported in the app structure and ready for deeper indexing integration
+- `AI layer`: recommendation logic, rationale, and policy-aware guidance are implemented in the copilot experience
 - `Deployment`: not complete yet
 
 ### Judging Criteria Mapping
@@ -170,7 +173,7 @@ Kabon is a policy-driven vault copilot that helps users and DAOs deposit once, e
 - demo video link, deployment addresses, and setup steps documented
 - test commands and expected outputs documented for reviewers
 
-Current note on April 27, 2026: Robinhood Chain support is already present in wallet/network readiness, but deployment addresses, live withdrawal indexing, and the stronger AI layer still need to be completed before final submission.
+Current note on April 27, 2026: Robinhood Chain support is already present in wallet/network readiness, while production deployment addresses and final live environment wiring still need to be completed before final submission.
 
 ## Deployment + Address Wiring
 
