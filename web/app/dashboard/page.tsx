@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useAppKitAccount } from "@reown/appkit/react";
 import { useChainId, usePublicClient, useWalletClient } from "wagmi";
 import { erc20Abi, parseUnits, type Address } from "viem";
@@ -252,6 +253,7 @@ const WALLET_CHART_COLORS = [
 ];
 
 export default function DashboardPage() {
+	const router = useRouter();
 	const assetSummaries = useAssetSummaries();
 	const assetRegistry = useAssetRegistry();
 	const greetingQuery = useGreeting();
@@ -956,6 +958,14 @@ export default function DashboardPage() {
 		);
 	}
 
+	function handleRowSelect(rowId: string) {
+		const asset = assets.find((entry) => entry.id === rowId);
+		if (!asset) return;
+		router.push(
+			`/protocol/opportunities/asset/${encodeURIComponent(asset.symbol)}`,
+		);
+	}
+
 	function handleDeposit(assetId: string) {
 		const asset = assets.find((entry) => entry.id === assetId);
 		if (!asset) return;
@@ -1481,6 +1491,7 @@ export default function DashboardPage() {
 						<FinancialMarketsTable
 							title="Asset"
 							rows={rows}
+							onRowSelect={handleRowSelect}
 							onAction={handleDeposit}
 							onCopilotClick={(rowId) =>
 								void openCopilot({ mode: "asset", assetId: rowId })

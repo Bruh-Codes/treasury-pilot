@@ -2,7 +2,6 @@
 
 Kabon is a policy-driven DeFi treasury copilot for Arbitrum. Users deposit a supported asset into a vault, receive ERC-4626 vault shares as their receipt, and use a guided product flow to evaluate allocation opportunities, review recommendation logic, and withdraw with clearer unwind expectations.
 
-
 The product is Arbitrum-first today, with frontend wallet support expanded to include Robinhood Chain testnet so the app can speak credibly to tokenized asset and RWA workflows as that ecosystem opens up.
 
 This repository contains two workspaces:
@@ -71,7 +70,6 @@ Status checked on April 27, 2026:
 - live protocol and opportunity browsing is implemented for Arbitrum
 - recommendation generation is implemented today as a deterministic scoring engine over live market data
 - copilot UI is implemented, but it is not yet a true LLM-backed agent workflow
-- standalone policy and recommendation pages are not live right now; those routes redirect to the homepage experience
 - withdraw and activity routes are still placeholder UX pending live indexing / queue integration
 - deployment, production addresses, and full end-to-end live demo wiring are still pending
 

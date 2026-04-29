@@ -18,10 +18,6 @@ function getGreetingForTimezone(timezone: string, now: Date) {
 			.find((part) => part.type === "hour")?.value ?? "12",
 	);
 
-	if (hour < 5) {
-		return "Hello";
-	}
-
 	if (hour < 12) {
 		return "Good morning";
 	}
@@ -33,7 +29,7 @@ function getGreetingForTimezone(timezone: string, now: Date) {
 	return "Good evening";
 }
 
-function isValidTimezone(timezone: string | null) {
+function isValidTimezone(timezone: string | null): timezone is string {
 	if (!timezone) return false;
 
 	try {
