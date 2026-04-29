@@ -3,6 +3,7 @@ import "server-only";
 import { and, eq } from "drizzle-orm";
 
 import { assetRegistry } from "@/drizzle/schema";
+import { getKnownAssetIcon } from "@/lib/asset-icon-map";
 import { db } from "@/lib/db";
 import type {
 	AssetRegistryEntry,
@@ -137,6 +138,7 @@ const FALLBACK_REGISTRY: AssetRegistryEntry[] = [
 		isCanonical: true,
 		issuer: "Robinhood Chain Testnet",
 		sourceOfTruthUrl: "https://docs.robinhood.com/chain/contracts/",
+		iconUrl: getKnownAssetIcon("AMZN"),
 		notes:
 			"Official Robinhood Chain testnet stock-token contract from Robinhood documentation.",
 		reviewedBy: "Kabon",
@@ -160,6 +162,7 @@ const FALLBACK_REGISTRY: AssetRegistryEntry[] = [
 		isCanonical: true,
 		issuer: "Robinhood Chain Testnet",
 		sourceOfTruthUrl: "https://docs.robinhood.com/chain/contracts/",
+		iconUrl: getKnownAssetIcon("AMD"),
 		notes:
 			"Official Robinhood Chain testnet stock-token contract from Robinhood documentation.",
 		reviewedBy: "Kabon",
@@ -183,6 +186,7 @@ const FALLBACK_REGISTRY: AssetRegistryEntry[] = [
 		isCanonical: true,
 		issuer: "Robinhood Chain Testnet",
 		sourceOfTruthUrl: "https://docs.robinhood.com/chain/contracts/",
+		iconUrl: getKnownAssetIcon("NFLX"),
 		notes:
 			"Official Robinhood Chain testnet stock-token contract from Robinhood documentation.",
 		reviewedBy: "Kabon",
@@ -206,6 +210,7 @@ const FALLBACK_REGISTRY: AssetRegistryEntry[] = [
 		isCanonical: true,
 		issuer: "Robinhood Chain Testnet",
 		sourceOfTruthUrl: "https://docs.robinhood.com/chain/contracts/",
+		iconUrl: getKnownAssetIcon("PLTR"),
 		notes:
 			"Official Robinhood Chain testnet stock-token contract from Robinhood documentation.",
 		reviewedBy: "Kabon",
@@ -229,6 +234,7 @@ const FALLBACK_REGISTRY: AssetRegistryEntry[] = [
 		isCanonical: true,
 		issuer: "Robinhood Chain Testnet",
 		sourceOfTruthUrl: "https://docs.robinhood.com/chain/contracts/",
+		iconUrl: getKnownAssetIcon("TSLA"),
 		notes:
 			"Official Robinhood Chain testnet stock-token contract from Robinhood documentation.",
 		reviewedBy: "Kabon",

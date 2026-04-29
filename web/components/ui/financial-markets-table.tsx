@@ -54,7 +54,7 @@ const TABLE_HEADERS = [
 ] as const;
 
 const TABLE_GRID_TEMPLATE =
-	"minmax(260px,2.5fr) minmax(120px,1fr) minmax(92px,0.9fr) minmax(92px,0.9fr) minmax(130px,1.1fr) minmax(138px,1.1fr) minmax(160px,1.2fr) 52px";
+	"minmax(210px,2.2fr) minmax(88px,0.9fr) minmax(82px,0.85fr) minmax(84px,0.8fr) minmax(108px,1fr) minmax(112px,1fr) minmax(116px,1fr) 40px";
 
 export function FinancialMarketsTable({
 	title = "Asset",
@@ -135,13 +135,13 @@ export function FinancialMarketsTable({
 		<div className={cn("w-full", className)}>
 			<div className="overflow-hidden">
 				<div className="overflow-x-auto">
-					<div className="min-w-[980px] xl:min-w-0">
+					<div className="min-w-[860px] xl:min-w-0">
 						<div
-							className="border-b border-border/30 bg-muted/15 px-6 py-3 text-left text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/80"
+							className="border-b border-border/30 bg-muted/15 px-4 py-2.5 text-left text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground/80"
 							style={{
 								display: "grid",
 								gridTemplateColumns: TABLE_GRID_TEMPLATE,
-								columnGap: "10px",
+								columnGap: "8px",
 							}}
 						>
 							<HeaderCell label={title} />
@@ -182,7 +182,7 @@ export function FinancialMarketsTable({
 													}
 												}}
 												className={cn(
-													"group/row relative cursor-pointer px-6 py-4 transition-all duration-200",
+													"group/row relative cursor-pointer px-4 py-3.5 transition-all duration-200",
 													getRowTone(isSelected),
 													index < visibleRows.length - 1 &&
 														"border-b border-border/20",
@@ -190,16 +190,16 @@ export function FinancialMarketsTable({
 												style={{
 													display: "grid",
 													gridTemplateColumns: TABLE_GRID_TEMPLATE,
-													columnGap: "10px",
+													columnGap: "8px",
 												}}
 											>
-												<div className="flex min-w-0 items-center gap-3">
+												<div className="flex min-w-0 items-center gap-2.5">
 													<AssetAvatar row={row} />
 													<div className="min-w-0">
-														<div className="truncate font-medium text-foreground/95">
+														<div className="truncate text-[15px] font-medium leading-tight text-foreground/95">
 															{row.name}
 														</div>
-														<div className="mt-1 text-xs text-muted-foreground/75">
+														<div className="mt-0.5 text-[11px] text-muted-foreground/75">
 															{row.symbol}
 															{row.chainLabel ? ` | ${row.chainLabel}` : ""}
 														</div>
@@ -334,7 +334,7 @@ function HeaderCell({ label }: { label: string }) {
 function AssetAvatar({ row }: { row: FinancialAssetRow }) {
 	if (row.iconUrl) {
 		return (
-			<Avatar className="size-11 border border-border/30">
+			<Avatar className="size-9 border border-border/30">
 				<AvatarImage
 					src={row.iconUrl}
 					alt={`${row.name} icon`}
@@ -353,7 +353,7 @@ function AssetAvatar({ row }: { row: FinancialAssetRow }) {
 	}
 
 	return (
-		<Avatar className="size-11 border border-border/30">
+		<Avatar className="size-9 border border-border/30">
 			<AvatarFallback
 				className={cn(
 					"bg-gradient-to-br font-semibold text-white",
@@ -370,7 +370,7 @@ function TableValue({ value, strong }: { value: string; strong?: boolean }) {
 	return (
 		<div
 			className={cn(
-				"flex items-center text-sm font-medium text-foreground/90",
+				"flex items-center text-[13px] font-medium text-foreground/90",
 				!strong && "font-normal text-muted-foreground",
 			)}
 		>

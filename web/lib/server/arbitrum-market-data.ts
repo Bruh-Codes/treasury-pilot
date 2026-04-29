@@ -12,7 +12,7 @@ import type {
 	StrategySnapshot,
 } from "@/lib/yieldpilot-types";
 import { LIQUIDITY_PRESETS, RISK_PRESETS } from "@/lib/yieldpilot-data";
-
+import { getKnownAssetIcon } from "@/lib/asset-icon-map";
 type DefiLlamaProtocol = {
 	name?: string;
 	slug?: string;
@@ -106,9 +106,19 @@ const ICON_MAP: Record<string, string> = {
 	GMX: "https://assets.coingecko.com/coins/images/18323/large/arbit.png",
 	FRAX: "https://raw.githubusercontent.com/spothq/cryptocurrency-icons/master/128/color/frax.png",
 	USDE: "https://assets.coingecko.com/coins/images/33613/large/usde.png",
+	// RWA Stock Tokens (Robinhood Chain)
+	AMZN: getKnownAssetIcon("AMZN")!,
+	AMD: getKnownAssetIcon("AMD")!,
+	NFLX: getKnownAssetIcon("NFLX")!,
+	PLTR: getKnownAssetIcon("PLTR")!,
+	TSLA: getKnownAssetIcon("TSLA")!,
+	AAPL: getKnownAssetIcon("AAPL")!,
+	GOOGL: getKnownAssetIcon("GOOGL")!,
+	MSFT: getKnownAssetIcon("MSFT")!,
 };
 
-let protocolsCache: { data: DefiLlamaProtocol[]; timestamp: number } | null = null;
+let protocolsCache: { data: DefiLlamaProtocol[]; timestamp: number } | null =
+	null;
 let poolsCache: { data: DefiLlamaPool[]; timestamp: number } | null = null;
 const CACHE_TTL = 15 * 60 * 1000; // 15 minutes
 
@@ -384,7 +394,12 @@ export function buildMarketSummary(opportunities: Opportunity[]) {
 
 export async function getArbitrumOpportunities(
 	assetSymbol?: string,
-	options: { protocol?: string; page?: number; pageSize?: number; range?: string } = {},
+	options: {
+		protocol?: string;
+		page?: number;
+		pageSize?: number;
+		range?: string;
+	} = {},
 ): Promise<{
 	opportunities: Opportunity[];
 	summary: ReturnType<typeof buildMarketSummary>;
@@ -449,7 +464,8 @@ export async function getArbitrumOpportunities(
 			(opportunity) =>
 				!options.protocol ||
 				opportunity.protocolSlug === options.protocol ||
-				opportunity.protocolName.toLowerCase() === options.protocol.toLowerCase(),
+				opportunity.protocolName.toLowerCase() ===
+					options.protocol.toLowerCase(),
 		)
 		.sort((a, b) => b.tvlUsd - a.tvlUsd || b.apy - a.apy);
 
@@ -604,7 +620,7 @@ export async function getArbitrumAssetSummaries(): Promise<
 			return {
 				symbol,
 				name: ASSET_NAME_MAP[symbol] ?? symbol,
-				iconUrl: items[0]?.logo ?? ICON_MAP[symbol],
+				iconUrl: ICON_MAP[symbol] ?? items[0]?.logo,
 				protocolCount: new Set(items.map((item) => item.protocolId)).size,
 				topApy,
 				averageApy,

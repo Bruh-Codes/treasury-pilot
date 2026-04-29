@@ -12,8 +12,10 @@ import {
 	ChartTooltipContent,
 } from "@/components/ui/chart";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getKnownAssetIcon } from "@/lib/asset-icon-map";
 import { formatUsd } from "@/lib/yieldpilot-data";
 import {
+	useAssetRegistry,
 	useAssetSummaries,
 	useOpportunities,
 	useProtocols,
@@ -60,6 +62,7 @@ function AssetOpportunitiesPage() {
 	const protocolQuery = useProtocols(assetSymbol);
 	const opportunityQuery = useOpportunities(assetSymbol);
 	const assetQuery = useAssetSummaries();
+	const registryQuery = useAssetRegistry();
 	const tokenHistory = useTokenHistory([assetSymbol], selectedRange);
 	const [sortKey, setSortKey] = useState<SortKey>("apy");
 	const [sortDirection, setSortDirection] = useState<SortDirection>("desc");
@@ -67,17 +70,31 @@ function AssetOpportunitiesPage() {
 	const protocols = protocolQuery.data?.protocols ?? [];
 	const opportunities = opportunityQuery.data?.opportunities ?? [];
 	const assetSummaries = assetQuery.data?.assets ?? [];
+	const registryAssets = registryQuery.data?.assets ?? [];
 
 	const assetSummary = assetSummaries.find(
 		(asset) => asset.symbol === assetSymbol,
 	);
+	const registryAsset = registryAssets.find(
+		(asset) => asset.symbol === assetSymbol,
+	);
+	const assetDisplayName =
+		registryAsset?.name ?? assetSummary?.name ?? assetSymbol;
 	const assetIconUrl =
 		assetSymbol === "ETH"
 			? "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png"
 			: (assetSummary?.iconUrl ??
+				registryAsset?.iconUrl ??
+				getKnownAssetIcon(assetSymbol) ??
 				(assetSummary?.address
 					? getTrustWalletIconUrl(assetSummary.address, assetSymbol, 42161)
-					: undefined));
+					: registryAsset?.address
+						? getTrustWalletIconUrl(
+								registryAsset.address,
+								assetSymbol,
+								registryAsset.chainId,
+							)
+						: undefined));
 	const instantCount = opportunities.filter(
 		(opportunity) => opportunity.liquidityLabel === "Instant",
 	).length;
@@ -173,8 +190,8 @@ function AssetOpportunitiesPage() {
 		<div className="px-6 py-8 md:px-7 md:py-9">
 			<PageHeader
 				title={
-					<div className="flex items-center gap-3">
-						<Avatar className="size-10 border border-border/40">
+					<div className="flex mb-7 items-center gap-4">
+						<Avatar className="size-11 border border-border/40 sm:size-12">
 							<AvatarImage
 								src={assetIconUrl}
 								alt={`${assetSymbol} icon`}
@@ -184,10 +201,17 @@ function AssetOpportunitiesPage() {
 								{assetSymbol.slice(0, 1)}
 							</AvatarFallback>
 						</Avatar>
-						{assetSymbol} Opportunities
+						<div>
+							<span className="min-w-0">
+								<span className="block truncate">{assetDisplayName}</span>
+							</span>
+							<span className="block text-sm font-medium uppercase tracking-[0.18em] text-muted-foreground sm:text-base">
+								{assetSymbol} Opportunities
+							</span>
+						</div>
 					</div>
 				}
-				description={`Live protocol and opportunity data for ${assetSymbol} on Arbitrum.`}
+				description={`Live protocol and opportunity data for ${assetDisplayName} on Arbitrum.`}
 			/>
 
 			<Card className="mt-7 p-0">

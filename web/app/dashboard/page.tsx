@@ -64,6 +64,7 @@ import { DepositDialog } from "@/components/dashboard/deposit-dialog";
 import { ReceiveDialog } from "@/components/dashboard/receive-dialog";
 import SearchPill from "@/components/dashboard/search-pill";
 import DashboardPageSkeleton from "@/components/dashboard/dashboard-skeleton";
+import { getKnownAssetIcon } from "@/lib/asset-icon-map";
 
 type AssetItem = {
 	id: string;
@@ -380,6 +381,7 @@ export default function DashboardPage() {
 				tokenAddress,
 				iconUrl:
 					asset.iconUrl ??
+					getKnownAssetIcon(asset.symbol) ??
 					getTrustWalletIconUrl(tokenAddress, asset.symbol, asset.chainId),
 			});
 		}
