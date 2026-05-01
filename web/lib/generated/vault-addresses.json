@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-04-28T02:43:31.963Z",
+  "generatedAt": "2026-05-01T04:52:50.233Z",
   "deployments": {
     "46630": {
       "AMZN": {
@@ -20,11 +20,11 @@
         "name": "USD Coin",
         "tokenAddress": "0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d",
         "tokenDecimals": 6,
-        "vaultAddress": "0x835e7250a4e2ffc56f14aa171f0086bc60a6d4ea",
+        "vaultAddress": "0x23d80c8c231d7bf671ac54cd5854728535063254",
         "vaultLabel": "Kabon USDC Vault",
         "network": "Arbitrum Sepolia",
         "sourceOfTruthUrl": "https://developers.circle.com/stablecoins/usdc-contract-addresses",
-        "deployedAt": "2026-04-28T02:39:30.152Z"
+        "deployedAt": "2026-05-01T04:52:50.235Z"
       }
     }
   }

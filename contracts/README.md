@@ -22,7 +22,7 @@ Instead:
 
 1. users deposit assets into a Kabon ERC-4626 vault
 2. the vault mints shares representing the user position
-3. an owner or authorized operator deploys idle vault liquidity into whitelisted strategy adapters
+3. approved route execution deploys idle vault liquidity into whitelisted strategy adapters
 4. withdrawals are serviced from idle liquidity first, then from recalls through the configured queue
 
 Protocol execution is therefore adapter-mediated and vault-level, while the user-facing product remains share-based.
@@ -33,7 +33,7 @@ Protocol execution is therefore adapter-mediated and vault-level, while the user
 
 1. a user deposits an ERC-20 asset
 2. the vault mints ERC-4626 shares to the user
-3. the operator can deploy idle assets into approved strategies
+3. approved route execution can deploy idle assets into approved strategies
 4. a user withdraws by redeeming shares for underlying assets
 5. if the vault does not have enough idle assets, it recalls capital from strategies using the configured withdrawal queue
 6. optional unwind fees can be charged only on the withdrawal portion that requires strategy recalls
@@ -89,10 +89,12 @@ The vault is safer than the original version, but it is not trustless.
 
 Production assumptions still include:
 
-- the owner is trusted to manage pause, strategy whitelist, deployment, recall, and sync operations
+- the owner is trusted to manage pause, strategy whitelist, withdrawal queue, recall, and sync operations
 - the proxy admin is trusted to perform upgrades safely
 - each whitelisted strategy adapter is trusted code and must be reviewed separately
 - `syncStrategyAssets(...)` still relies on the adapter's reported `totalAssets()` value
+
+note: route execution calls are currently permissionless on approved/whitelisted adapters to maximize demo UX.
 
 For real deployments, the owner and proxy admin should be multisig or timelock controlled.
 
@@ -118,6 +120,10 @@ contracts/
       UpgradeYieldPilotVault.ts
       YieldPilotVaultProxy.ts
   scripts/
+    deploy-and-whitelist-aave-strategy.ts
+    deploy-and-whitelist-mock-strategy.ts
+    deploy-supported-vault.ts
+    get-proxy-info.ts
     send-op-tx.ts
   test/
     YieldPilotVault.ts
@@ -268,6 +274,29 @@ The current suite covers:
 - Do not use the default local deployer account model for production governance.
 - Treat upgrades as governance actions with review, simulation, and signoff.
 - Treat `syncStrategyAssets(...)` as an operator action that should be monitored and logged.
+
+## Hackathon Live Route Quickstart
+
+```bash
+cd contracts
+
+# 1) deploy vault (updates ../web/lib/generated/vault-addresses.json)
+DEPLOY_ASSET=USDC npm run deploy:vault -- --network arbitrumSepolia
+
+# 2) confirm route selectors on deployed proxy
+PROXY_ADDRESS=0x23d80c8c231d7bf671ac54cd5854728535063254 npm run proxy:info -- --network arbitrumSepolia
+
+# 3) deploy + whitelist real Aave strategy adapter
+VAULT_ADDRESS=0x23d80c8c231d7bf671ac54cd5854728535063254 \
+AAVE_POOL_ADDRESS=0xBfC91D59fdAA134A4ED45f7B584cAf96D7792Eff \
+AAVE_ATOKEN_ADDRESS=0x460b97BD498E1157530AEb3086301d5225b91216 \
+ASSET_ADDRESS=0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d \
+npm run deploy:aave-strategy -- --network arbitrumSepolia
+```
+
+Whitelisting script proof screenshot:
+
+![Whitelisted route script output](../whitelisted-route.png)
 
 ## References
 

@@ -4,10 +4,11 @@ Kabon is a policy-driven DeFi treasury copilot for Arbitrum. Users deposit a sup
 
 The product is Arbitrum-first today, with wallet support expanded to include Robinhood Chain testnet so the app can speak credibly to tokenized asset and RWA workflows as that ecosystem opens up.
 
-This repository contains two workspaces:
+This repository contains three workspaces:
 
 - [contracts](C:\Users\hp\Desktop\arbs-london\contracts): Hardhat 3 smart contracts, proxy deployment modules, and tests
 - [web](C:\Users\hp\Desktop\arbs-london\web): Next.js frontend, wallet integration, and app-facing API routes
+- [indexers](C:\Users\hp\Desktop\arbs-london\indexers): The Graph subgraph for real-time vault event indexing
 
 ## Product Model
 
@@ -38,7 +39,7 @@ arbs-london/
 The contracts workspace currently includes:
 
 - an upgradeable ERC-4626 vault
-- owner-managed strategy whitelisting and deployment
+- owner-managed strategy whitelisting and controls with permissionless route execution on approved adapters (hackathon mode)
 - explicit withdrawal queue management for unwind order
 - proxy deployment through Hardhat Ignition and OpenZeppelin transparent proxies
 - reentrancy protections on vault entrypoints and strategy callbacks
@@ -62,6 +63,31 @@ The frontend workspace currently includes:
 
 See [web/README.md](C:\Users\hp\Desktop\arbs-london\web\README.md) for frontend setup details.
 
+## Indexers Summary
+
+The indexers workspace contains a The Graph subgraph for real-time vault event indexing:
+
+- tracks vault events: Deposit, Withdraw, StrategyAllocated, StrategyRecalled, StrategyWhitelisted, WithdrawalQueueUpdated
+- deployed on Graph Studio for live querying
+- provides GraphQL API for historical and real-time vault activity data
+- supports activity history and analytics for the frontend
+
+### Live Subgraph Endpoint
+
+**Query URL:** https://api.studio.thegraph.com/query/1749198/kabon-vault/v0.0.1
+
+**Studio URL:** https://thegraph.com/studio/subgraph/kabon-vault
+
+### Local Development
+
+```bash
+cd indexers/kabon-vault
+bun install
+graph codegen
+graph build
+graph deploy kabon-vault
+```
+
 ## Current Demo Status
 
 Status checked on April 29, 2026:
@@ -74,7 +100,7 @@ Status checked on April 29, 2026:
 - tokenized-equity pricing and chart history now prefer Polygon / Massive market data when configured
 - copilot UI is implemented with recommendation, rationale, and allocation framing in the product flow
 - withdraw and activity experiences are present in the application and positioned for deeper live integration
-- deployment, production addresses, and full end-to-end live demo wiring are still pending
+- Arbitrum Sepolia vault deployment, strategy whitelisting, and protocol route wiring are now live for hackathon demo flows
 
 ## Local Development
 
@@ -149,23 +175,21 @@ Kabon is a policy-driven vault copilot that helps users and DAOs deposit once, e
 - `Withdraw flow`: supported by the vault model and surfaced through the product UX
 - `Activity history`: supported in the app structure and ready for deeper indexing integration
 - `AI layer`: recommendation logic, rationale, and policy-aware guidance are implemented in the copilot experience, with execution framed around whitelisted vault allocation flows
-- `Deployment`: not complete yet
+- `Deployment`: live on Arbitrum Sepolia with whitelisted route execution
 
 ### Judging Criteria Mapping
 
 - **Smart contract quality**: upgradeable vault architecture, non-reentrant entrypoints, strategy accounting checks, and test coverage for deploy/withdraw/unwind/upgrade flows
 - **Product-market fit**: targeted at users and treasuries that want simplified yield operations
 
-The architecture in this repo is best extended by adding an operator allocation flow from idle vault liquidity into whitelisted strategy adapters.
-
-That means the next execution milestone should look like:
+Current execution milestone:
 
 1. the user deposits into a Kabon vault
 2. Kabon ranks and explains approved opportunities
-3. an operator or authorized execution layer deploys idle vault assets into a whitelisted adapter
+3. the user executes route deployment through whitelisted adapters from the protocol opportunity flow
 4. the vault continues to represent the user position through ERC-4626 shares
 
-This is how Kabon approaches “stake on behalf of the user”: through vault-level allocation on behalf of depositors rather than direct protocol-by-protocol interaction from the user wallet.
+Kabon approaches “stake on behalf of the user” through vault-level allocation and share-based accounting, while approved adapters handle protocol-specific interactions.
 
 ### Submission Checklist
 
@@ -173,7 +197,7 @@ This is how Kabon approaches “stake on behalf of the user”: through vault-le
 - at least one Robinhood Chain-facing path included in the user flow
 - test commands and expected outputs documented for reviewers
 
-Current note on April 27, 2026: Robinhood Chain support is already present in wallet/network readiness, while production deployment addresses and final live environment wiring still need to be completed before final submission.
+Current note on May 1, 2026: Arbitrum Sepolia live deployment and route wiring are complete for demo submission. Remaining work is production-grade hardening and broader protocol coverage.
 
 ## Deployment + Address Wiring
 
@@ -191,3 +215,66 @@ That script writes frontend-readable vault addresses into:
 Official Robinhood Chain testnet stock-token addresses and official Circle USDC addresses are tracked in:
 
 - [contracts/config/supported-assets.ts](C:\Users\hp\Desktop\arbs-london\contracts\config\supported-assets.ts)
+
+## Hackathon Live Deployment Proof
+
+### Live contracts (Arbitrum Sepolia)
+
+- Vault proxy: `0x23d80c8c231d7bf671ac54cd5854728535063254`
+- Vault implementation: `0x219ccc99ab55c001f9c48cec3740d6a64518bd72`
+- Aave V3 strategy adapter (USDC): `0xC9d2E20859020375c8C7517464A2Ee890Ff0864F`
+- Aave V3 Pool: `0xBfC91D59fdAA134A4ED45f7B584cAf96D7792Eff`
+- Aave V3 USDC aToken: `0x460b97BD498E1157530AEb3086301d5225b91216`
+
+### Explorer links
+
+- Vault proxy: https://sepolia.arbiscan.io/address/0x23d80c8c231d7bf671ac54cd5854728535063254
+- Vault implementation: https://sepolia.arbiscan.io/address/0x219ccc99ab55c001f9c48cec3740d6a64518bd72
+- Aave strategy adapter: https://sepolia.arbiscan.io/address/0xC9d2E20859020375c8C7517464A2Ee890Ff0864F
+- Whitelist tx: https://sepolia.arbiscan.io/tx/0xbdb850cd11f45772e672f410862b444631f5e787d8e750220eaa776d9f92f2ba
+
+### Frontend env wiring
+
+```bash
+NEXT_PUBLIC_AAVE_USDC_SEPOLIA_STRATEGY_ADDRESS=0xC9d2E20859020375c8C7517464A2Ee890Ff0864F
+```
+
+## Known Limitations / Next Steps
+
+- Route registry is currently env-and-mapping based for hackathon speed; move to onchain/DB-backed registry for production.
+- Strategy adapter set is currently minimal (Aave USDC path); expand adapter coverage and add robust route selection.
+- Add additional production hardening (governance/multisig controls, audits, monitoring, alerting).
+
+## Hackathon Route Setup + Proof
+
+### 1) Deploy and whitelist a mock route (fast smoke test)
+
+```bash
+cd contracts
+VAULT_ADDRESS=0x23d80c8c231d7bf671ac54cd5854728535063254 npm run deploy:mock-strategy -- --network arbitrumSepolia
+```
+
+### 2) Deploy and whitelist the real Aave USDC adapter
+
+```bash
+cd contracts
+VAULT_ADDRESS=0x23d80c8c231d7bf671ac54cd5854728535063254 \
+AAVE_POOL_ADDRESS=0xBfC91D59fdAA134A4ED45f7B584cAf96D7792Eff \
+AAVE_ATOKEN_ADDRESS=0x460b97BD498E1157530AEb3086301d5225b91216 \
+ASSET_ADDRESS=0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d \
+npm run deploy:aave-strategy -- --network arbitrumSepolia
+```
+
+### 3) Wire frontend route mapping to deployed strategy
+
+Set this in `web/.env.local` and restart the web app:
+
+```bash
+NEXT_PUBLIC_AAVE_USDC_SEPOLIA_STRATEGY_ADDRESS=0xC9d2E20859020375c8C7517464A2Ee890Ff0864F
+```
+
+### Whitelisted route proof
+
+`hardhat run scripts/deploy-and-whitelist-mock-strategy.ts --network arbitrumSepolia`
+
+![Whitelisted route script output](./whitelisted-route.png)

@@ -89,6 +89,16 @@ type ProtocolDepositAsset = {
 const RANGE_OPTIONS: RangeKey[] = ["1W", "1M", "1Y", "All"];
 const DEPOSIT_COLORS = ["#8b7eff", "#d38cf5", "#5ec6ff"] as const;
 const WITHDRAW_COLORS = ["#76c8ff", "#8b7eff", "#4ecdc4"] as const;
+const AAVE_USDC_SEPOLIA_STRATEGY = process.env
+	.NEXT_PUBLIC_AAVE_USDC_SEPOLIA_STRATEGY_ADDRESS as Address | undefined;
+const HACKATHON_STRATEGY_ROUTES: Record<string, Address> =
+	AAVE_USDC_SEPOLIA_STRATEGY
+		? {
+				"421614:aave:usdc": AAVE_USDC_SEPOLIA_STRATEGY,
+				"421614:aave-v3:usdc": AAVE_USDC_SEPOLIA_STRATEGY,
+				"421614:aave-v2:usdc": AAVE_USDC_SEPOLIA_STRATEGY,
+			}
+		: {};
 
 const ASSET_ICON_CLASSES: Record<string, string> = {
 	USDC: "from-sky-400 to-blue-600",
@@ -141,6 +151,15 @@ function getAssetIconUrl(
 		getKnownAssetIcon(symbol) ??
 		getTrustWalletIconUrl(tokenAddress, symbol, chainId)
 	);
+}
+
+function getHackathonStrategyAddress(
+	chainId: number,
+	protocolSlug: string,
+	assetSymbol: string,
+): Address | undefined {
+	const key = `${chainId}:${protocolSlug.toLowerCase()}:${assetSymbol.toLowerCase()}`;
+	return HACKATHON_STRATEGY_ROUTES[key];
 }
 
 function OpportunityDetailPage() {
@@ -401,9 +420,16 @@ function OpportunityDetailPage() {
 			return;
 		}
 
-		if (depositBalanceSource === "vault") {
-			toast.message("Vault route selected", {
-				description: "Vault-to-protocol execution is being wired.",
+		const strategyAddress = getHackathonStrategyAddress(
+			chainId,
+			protocolSlug,
+			depositAsset.symbol,
+		);
+
+		if (!strategyAddress) {
+			setNoAdapterAsset({
+				...depositAsset,
+				iconUrl: primary?.logo ?? depositAsset.iconUrl,
 			});
 			return;
 		}
@@ -429,52 +455,80 @@ function OpportunityDetailPage() {
 							}
 						: {};
 
-			const allowance = await publicClient.readContract({
-				address: depositAsset.tokenAddress,
-				abi: erc20Abi,
-				functionName: "allowance",
-				args: [address as Address, depositAsset.vaultAddress],
-			});
-
-			if (allowance < parsedAmount) {
-				toast.message(`Approving ${depositAsset.symbol} for vault deposit...`);
-				const approveHash = await walletClient.writeContract({
+			if (depositBalanceSource === "wallet") {
+				const allowance = await publicClient.readContract({
 					address: depositAsset.tokenAddress,
 					abi: erc20Abi,
-					functionName: "approve",
-					args: [depositAsset.vaultAddress, parsedAmount],
+					functionName: "allowance",
+					args: [address as Address, depositAsset.vaultAddress],
+				});
+
+				if (allowance < parsedAmount) {
+					toast.message(
+						`Approving ${depositAsset.symbol} for protocol routing...`,
+					);
+					const approveHash = await walletClient.writeContract({
+						address: depositAsset.tokenAddress,
+						abi: erc20Abi,
+						functionName: "approve",
+						args: [depositAsset.vaultAddress, parsedAmount],
+						account: walletClient.account,
+						chain: walletClient.chain,
+						...feeOverrides,
+					});
+					await publicClient.waitForTransactionReceipt({ hash: approveHash });
+				}
+
+				toast.message(
+					`Routing ${depositAmount} ${depositAsset.symbol} from wallet...`,
+				);
+				const routeHash = await walletClient.writeContract({
+					address: depositAsset.vaultAddress,
+					abi: yieldPilotVaultAbi,
+					functionName: "depositAndDeployToStrategyFor",
+					args: [
+						address as Address,
+						address as Address,
+						strategyAddress,
+						parsedAmount,
+					],
 					account: walletClient.account,
 					chain: walletClient.chain,
 					...feeOverrides,
 				});
-				await publicClient.waitForTransactionReceipt({ hash: approveHash });
+				await publicClient.waitForTransactionReceipt({ hash: routeHash });
+			} else {
+				toast.message(
+					`Routing ${depositAmount} ${depositAsset.symbol} from vault balance...`,
+				);
+				const routeHash = await walletClient.writeContract({
+					address: depositAsset.vaultAddress,
+					abi: yieldPilotVaultAbi,
+					functionName: "deployToStrategy",
+					args: [strategyAddress, parsedAmount],
+					account: walletClient.account,
+					chain: walletClient.chain,
+					...feeOverrides,
+				});
+				await publicClient.waitForTransactionReceipt({ hash: routeHash });
 			}
-
-			toast.message(`Depositing ${depositAmount} ${depositAsset.symbol}...`);
-			const depositHash = await walletClient.writeContract({
-				address: depositAsset.vaultAddress,
-				abi: yieldPilotVaultAbi,
-				functionName: "deposit",
-				args: [parsedAmount, address as Address],
-				account: walletClient.account,
-				chain: walletClient.chain,
-				...feeOverrides,
-			});
-			await publicClient.waitForTransactionReceipt({ hash: depositHash });
 
 			await queryClient.invalidateQueries({
 				queryKey: ["yieldpilot", "multichain-balances"],
 			});
+			await queryClient.invalidateQueries({
+				queryKey: ["yieldpilot", "multichain-vault-positions"],
+			});
 
 			setDepositAsset(null);
 			setDepositOpen(false);
-			toast.success("Deposit submitted successfully", {
-				description: `${depositAmount} ${depositAsset.symbol} was deposited into ${depositAsset.vaultLabel ?? "the selected vault"}.`,
+			toast.success("Protocol route submitted", {
+				description: `${depositAmount} ${depositAsset.symbol} was routed to ${primary?.protocolName ?? "the selected protocol"}.`,
 			});
 		} catch (error) {
 			const message =
-				error instanceof Error ? error.message : "Deposit transaction failed";
-			toast.error("Deposit failed", {
+				error instanceof Error ? error.message : "Route transaction failed";
+			toast.error("Route failed", {
 				description: message,
 			});
 		} finally {

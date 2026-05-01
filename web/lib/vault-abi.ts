@@ -36,6 +36,31 @@ export const yieldPilotVaultAbi = [
 	},
 	{
 		type: "function",
+		name: "deployToStrategy",
+		stateMutability: "nonpayable",
+		inputs: [
+			{ name: "strategy", type: "address" },
+			{ name: "assets", type: "uint256" },
+		],
+		outputs: [{ name: "deployedAssets", type: "uint256" }],
+	},
+	{
+		type: "function",
+		name: "depositAndDeployToStrategyFor",
+		stateMutability: "nonpayable",
+		inputs: [
+			{ name: "depositor", type: "address" },
+			{ name: "receiver", type: "address" },
+			{ name: "strategy", type: "address" },
+			{ name: "assets", type: "uint256" },
+		],
+		outputs: [
+			{ name: "shares", type: "uint256" },
+			{ name: "deployedAssets", type: "uint256" },
+		],
+	},
+	{
+		type: "function",
 		name: "withdraw",
 		stateMutability: "nonpayable",
 		inputs: [
