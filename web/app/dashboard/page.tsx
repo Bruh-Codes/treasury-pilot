@@ -347,17 +347,21 @@ export default function DashboardPage() {
 			for (const [symbol, token] of Object.entries(configBySymbol ?? {})) {
 				if (!token) continue;
 				const key = `${numericChainId}:${token.address.toLowerCase()}`;
+				const matchingSummary = summaries.find(
+					(summary) => summary.symbol === symbol,
+				);
 				next.set(key, {
 					key,
 					chainId: numericChainId,
 					symbol,
-					name:
-						summaries.find((summary) => summary.symbol === symbol)?.name ??
-						symbol,
+					name: matchingSummary?.name ?? symbol,
 					decimals: token.decimals,
 					stable: token.stable,
 					tokenAddress: token.address,
-					iconUrl: getTrustWalletIconUrl(token.address, symbol, numericChainId),
+					iconUrl:
+						matchingSummary?.iconUrl ??
+						getKnownAssetIcon(symbol) ??
+						getTrustWalletIconUrl(token.address, symbol, numericChainId),
 				});
 			}
 		}
@@ -1017,6 +1021,19 @@ export default function DashboardPage() {
 				depositAmount,
 				depositAsset.tokenDecimals,
 			);
+			const feeEstimate = await publicClient.estimateFeesPerGas();
+			const feeOverrides =
+				typeof feeEstimate.maxFeePerGas === "bigint" &&
+				typeof feeEstimate.maxPriorityFeePerGas === "bigint"
+					? {
+							maxFeePerGas: feeEstimate.maxFeePerGas,
+							maxPriorityFeePerGas: feeEstimate.maxPriorityFeePerGas,
+						}
+					: typeof feeEstimate.gasPrice === "bigint"
+						? {
+								gasPrice: feeEstimate.gasPrice,
+							}
+						: {};
 
 			const allowance = await publicClient.readContract({
 				address: depositAsset.tokenAddress,
@@ -1034,6 +1051,7 @@ export default function DashboardPage() {
 					args: [depositAsset.vaultAddress, parsedAmount],
 					account: walletClient.account,
 					chain: walletClient.chain,
+					...feeOverrides,
 				});
 				await publicClient.waitForTransactionReceipt({ hash: approveHash });
 			}
@@ -1046,6 +1064,7 @@ export default function DashboardPage() {
 				args: [parsedAmount, address as Address],
 				account: walletClient.account,
 				chain: walletClient.chain,
+				...feeOverrides,
 			});
 			await publicClient.waitForTransactionReceipt({ hash: depositHash });
 
@@ -1710,6 +1729,7 @@ export default function DashboardPage() {
 				confirmDeposit={confirmDeposit}
 				open={depositOpen}
 				onOpenChange={setDepositOpen}
+				walletReady={Boolean(walletClient && publicClient)}
 			/>
 
 			<ReceiveDialog

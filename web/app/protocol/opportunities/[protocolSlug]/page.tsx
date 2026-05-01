@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useAppKitAccount } from "@reown/appkit/react";
+import { useChainId, usePublicClient, useWalletClient } from "wagmi";
+import { erc20Abi, parseUnits, type Address } from "viem";
 import {
 	ArrowLeft,
 	ArrowUpRight,
@@ -14,6 +17,7 @@ import {
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 
 import { Card } from "@/components/page-primitives";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
 	type ChartConfig,
@@ -21,6 +25,13 @@ import {
 	ChartTooltip,
 	ChartTooltipContent,
 } from "@/components/ui/chart";
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+} from "@/components/ui/dialog";
 import {
 	Tooltip,
 	TooltipContent,
@@ -36,7 +47,17 @@ import {
 	PaginationPrevious,
 } from "@/components/ui/pagination";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useOpportunities } from "@/lib/use-yieldpilot-market-data";
+import { DepositDialog } from "@/components/dashboard/deposit-dialog";
+import { getKnownAssetIcon } from "@/lib/asset-icon-map";
+import { getChainById } from "@/lib/chain-utils";
+import { yieldPilotVaultAbi } from "@/lib/vault-abi";
+import { getSupportedVaultAsset } from "@/lib/vault-registry";
+import {
+	useMultichainBalances,
+	useOpportunities,
+	useMultichainVaultPositions,
+	useYieldpilotQueryClient,
+} from "@/lib/use-yieldpilot-market-data";
 import type {
 	Opportunity,
 	StrategyLiquidity,
@@ -44,21 +65,110 @@ import type {
 } from "@/lib/yieldpilot-types";
 import { cn } from "@/lib/utils";
 import { formatUsd } from "@/lib/yieldpilot-data";
+import { toast } from "sonner";
 
 type RangeKey = "1W" | "1M" | "1Y" | "All";
+
+type ProtocolDepositAsset = {
+	id: string;
+	name: string;
+	symbol: string;
+	chainId: number;
+	chainLabel: string;
+	iconUrl?: string;
+	walletBalance: number;
+	supported: boolean;
+	iconClass: string;
+	tokenAddress?: Address;
+	tokenDecimals?: number;
+	vaultAddress?: Address;
+	vaultLabel?: string;
+	marketApy?: string;
+};
 
 const RANGE_OPTIONS: RangeKey[] = ["1W", "1M", "1Y", "All"];
 const DEPOSIT_COLORS = ["#8b7eff", "#d38cf5", "#5ec6ff"] as const;
 const WITHDRAW_COLORS = ["#76c8ff", "#8b7eff", "#4ecdc4"] as const;
 
+const ASSET_ICON_CLASSES: Record<string, string> = {
+	USDC: "from-sky-400 to-blue-600",
+	USDT: "from-emerald-400 to-teal-600",
+	ETH: "from-slate-500 to-slate-700",
+	WETH: "from-slate-500 to-slate-700",
+	WBTC: "from-orange-400 to-amber-500",
+	LINK: "from-blue-500 to-blue-700",
+	AAVE: "from-violet-400 to-purple-600",
+};
+
+function getTrustWalletIconUrl(
+	tokenAddress?: Address,
+	symbol?: string,
+	currentChainId?: number,
+): string | undefined {
+	if (!tokenAddress) {
+		if (symbol === "ETH") {
+			return "https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/ethereum/info/logo.png";
+		}
+
+		return undefined;
+	}
+
+	const chain = getChainById(currentChainId || 1);
+	let blockchain = "ethereum";
+
+	if (chain?.name.toLowerCase().includes("arbitrum")) {
+		blockchain = "arbitrum";
+	} else if (chain?.name.toLowerCase().includes("robinhood")) {
+		blockchain = "ethereum";
+	}
+
+	return `https://raw.githubusercontent.com/trustwallet/assets/master/blockchains/${blockchain}/assets/${tokenAddress}/logo.png`;
+}
+
+function getAssetIconClass(symbol?: string) {
+	return (
+		ASSET_ICON_CLASSES[symbol?.trim().toUpperCase() ?? ""] ??
+		"from-neutral-500 to-neutral-700"
+	);
+}
+
+function getAssetIconUrl(
+	symbol?: string,
+	tokenAddress?: Address,
+	chainId?: number,
+) {
+	return (
+		getKnownAssetIcon(symbol) ??
+		getTrustWalletIconUrl(tokenAddress, symbol, chainId)
+	);
+}
+
 function OpportunityDetailPage() {
 	const router = useRouter();
 	const params = useParams<{ protocolSlug: string | string[] }>();
 	const searchParams = useSearchParams();
+	const { address } = useAppKitAccount();
+	const chainId = useChainId();
+	const publicClient = usePublicClient();
+	const { data: walletClient } = useWalletClient();
+	const queryClient = useYieldpilotQueryClient();
 	const [selectedRange, setSelectedRange] = useState<RangeKey>("1W");
 	const [activeTab, setActiveTab] = useState<"deposit" | "withdraw">("deposit");
 	const [depositPage, setDepositPage] = useState(1);
 	const [withdrawPage, setWithdrawPage] = useState(1);
+	const [depositOpen, setDepositOpen] = useState(false);
+	const [isDepositing, setIsDepositing] = useState(false);
+	const [depositAmount, setDepositAmount] = useState("0");
+	const [depositBalanceSource, setDepositBalanceSource] = useState<
+		"vault" | "wallet"
+	>("vault");
+	const [depositAsset, setDepositAsset] = useState<ProtocolDepositAsset | null>(
+		null,
+	);
+	const [noBalanceAsset, setNoBalanceAsset] =
+		useState<ProtocolDepositAsset | null>(null);
+	const [noAdapterAsset, setNoAdapterAsset] =
+		useState<ProtocolDepositAsset | null>(null);
 	const itemsPerPage = 10;
 
 	const protocolSlugParam = params.protocolSlug;
@@ -96,10 +206,281 @@ function OpportunityDetailPage() {
 	const totalPages = Math.ceil(totalItems / itemsPerPage);
 
 	const primary = topOpportunities[0] ?? opportunities[0] ?? null;
+	const vaultConfig = getSupportedVaultAsset(
+		chainId,
+		asset ?? primary?.assetSymbol ?? "",
+	);
+	const trackedDepositAssets = useMemo(
+		() =>
+			vaultConfig
+				? [
+						{
+							key: `${chainId}:${vaultConfig.tokenAddress.toLowerCase()}`,
+							chainId,
+							symbol: vaultConfig.symbol,
+							name: vaultConfig.name,
+							decimals: vaultConfig.tokenDecimals,
+							tokenAddress: vaultConfig.tokenAddress,
+						},
+					]
+				: [],
+		[chainId, vaultConfig],
+	);
+	const multichainBalances = useMultichainBalances(
+		address as Address | undefined,
+		trackedDepositAssets,
+	);
+	const trackedVaultPositions = useMemo(
+		() =>
+			vaultConfig
+				? [
+						{
+							key: `${chainId}:${vaultConfig.vaultAddress.toLowerCase()}`,
+							chainId,
+							symbol: vaultConfig.symbol,
+							vaultAddress: vaultConfig.vaultAddress,
+							tokenDecimals: vaultConfig.tokenDecimals,
+						},
+					]
+				: [],
+		[chainId, vaultConfig],
+	);
+	const multichainVaultPositions = useMultichainVaultPositions(
+		address as Address | undefined,
+		trackedVaultPositions,
+	);
+	const protocolDepositAsset = useMemo(() => {
+		if (!primary || !vaultConfig) return null;
+		const walletBalance =
+			multichainBalances.data?.balances?.[
+				`${chainId}:${vaultConfig.tokenAddress.toLowerCase()}`
+			]?.balance ?? 0;
+
+		return {
+			id: `${chainId}:${vaultConfig.tokenAddress.toLowerCase()}`,
+			name: vaultConfig.name,
+			symbol: vaultConfig.symbol,
+			chainId,
+			chainLabel: getChainById(chainId)?.name ?? `Chain ${chainId}`,
+			iconUrl: getAssetIconUrl(
+				vaultConfig.symbol,
+				vaultConfig.tokenAddress,
+				chainId,
+			),
+			walletBalance,
+			supported: true,
+			iconClass: getAssetIconClass(vaultConfig.symbol),
+			tokenAddress: vaultConfig.tokenAddress,
+			tokenDecimals: vaultConfig.tokenDecimals,
+			vaultAddress: vaultConfig.vaultAddress,
+			vaultLabel: vaultConfig.vaultLabel,
+			marketApy: `${summary.averageApy.toFixed(2)}% avg`,
+		} satisfies ProtocolDepositAsset;
+	}, [
+		chainId,
+		multichainBalances.data?.balances,
+		primary,
+		summary.averageApy,
+		vaultConfig,
+	]);
+	const protocolVaultBalance = useMemo(() => {
+		if (!vaultConfig) return 0;
+		return (
+			multichainVaultPositions.data?.positions?.[
+				`${chainId}:${vaultConfig.vaultAddress.toLowerCase()}`
+			]?.assets ?? 0
+		);
+	}, [chainId, multichainVaultPositions.data?.positions, vaultConfig]);
 
 	const handleTabChange = (value: string) => {
 		setActiveTab(value as "deposit" | "withdraw");
 	};
+
+	function openDeposit(
+		assetItem: ProtocolDepositAsset,
+		source: "vault" | "wallet" = depositBalanceSource,
+	) {
+		setDepositBalanceSource(source);
+		setDepositAsset(assetItem);
+		setDepositOpen(true);
+		const availableBalance =
+			source === "vault" ? protocolVaultBalance : assetItem.walletBalance;
+		setDepositAmount(
+			availableBalance > 0 ? Math.min(availableBalance, 5000).toString() : "0",
+		);
+	}
+
+	function handleProtocolDeposit() {
+		if (!primary?.adapterAvailable) {
+			if (protocolDepositAsset) {
+				setNoAdapterAsset({
+					...protocolDepositAsset,
+					iconUrl: primary.logo ?? protocolDepositAsset.iconUrl,
+				});
+			} else if (primary) {
+				setNoAdapterAsset({
+					id: `${chainId}:${primary.assetSymbol}`,
+					name: primary.assetDisplayName,
+					symbol: primary.assetSymbol,
+					chainId,
+					chainLabel: getChainById(chainId)?.name ?? `Chain ${chainId}`,
+					iconUrl:
+						primary.logo ??
+						getAssetIconUrl(
+							primary.assetSymbol,
+							vaultConfig?.tokenAddress,
+							chainId,
+						),
+					walletBalance: 0,
+					supported: false,
+					iconClass: getAssetIconClass(primary.assetSymbol),
+				});
+			}
+			return;
+		}
+
+		if (
+			!protocolDepositAsset ||
+			(protocolDepositAsset.walletBalance <= 0 && protocolVaultBalance <= 0)
+		) {
+			if (protocolDepositAsset) {
+				setNoBalanceAsset(protocolDepositAsset);
+			} else if (primary) {
+				setNoBalanceAsset({
+					id: `${chainId}:${primary.assetSymbol}`,
+					name: primary.assetDisplayName,
+					symbol: primary.assetSymbol,
+					chainId,
+					chainLabel: getChainById(chainId)?.name ?? `Chain ${chainId}`,
+					iconUrl: getAssetIconUrl(
+						primary.assetSymbol,
+						vaultConfig?.tokenAddress,
+						chainId,
+					),
+					walletBalance: 0,
+					supported: false,
+					iconClass: getAssetIconClass(primary.assetSymbol),
+				});
+			}
+			return;
+		}
+
+		openDeposit(
+			protocolDepositAsset,
+			protocolVaultBalance > 0 ? "vault" : "wallet",
+		);
+	}
+
+	async function confirmDeposit() {
+		if (!depositAsset) return;
+		const amount = Number(depositAmount) || 0;
+		if (amount <= 0) return;
+		const selectedAvailableBalance =
+			depositBalanceSource === "vault"
+				? protocolVaultBalance
+				: depositAsset.walletBalance;
+		if (amount > selectedAvailableBalance) return;
+		if (!address) {
+			toast.error("Connect your wallet first");
+			return;
+		}
+
+		if (
+			!depositAsset.tokenAddress ||
+			!depositAsset.tokenDecimals ||
+			!depositAsset.vaultAddress
+		) {
+			toast.error(
+				"No supported vault is configured for this asset on the current chain",
+			);
+			return;
+		}
+
+		if (!walletClient || !publicClient) {
+			toast.error("Wallet client is not ready yet");
+			return;
+		}
+
+		if (depositBalanceSource === "vault") {
+			toast.message("Vault route selected", {
+				description: "Vault-to-protocol execution is being wired.",
+			});
+			return;
+		}
+
+		try {
+			setIsDepositing(true);
+
+			const parsedAmount = parseUnits(
+				depositAmount,
+				depositAsset.tokenDecimals,
+			);
+			const feeEstimate = await publicClient.estimateFeesPerGas();
+			const feeOverrides =
+				typeof feeEstimate.maxFeePerGas === "bigint" &&
+				typeof feeEstimate.maxPriorityFeePerGas === "bigint"
+					? {
+							maxFeePerGas: feeEstimate.maxFeePerGas,
+							maxPriorityFeePerGas: feeEstimate.maxPriorityFeePerGas,
+						}
+					: typeof feeEstimate.gasPrice === "bigint"
+						? {
+								gasPrice: feeEstimate.gasPrice,
+							}
+						: {};
+
+			const allowance = await publicClient.readContract({
+				address: depositAsset.tokenAddress,
+				abi: erc20Abi,
+				functionName: "allowance",
+				args: [address as Address, depositAsset.vaultAddress],
+			});
+
+			if (allowance < parsedAmount) {
+				toast.message(`Approving ${depositAsset.symbol} for vault deposit...`);
+				const approveHash = await walletClient.writeContract({
+					address: depositAsset.tokenAddress,
+					abi: erc20Abi,
+					functionName: "approve",
+					args: [depositAsset.vaultAddress, parsedAmount],
+					account: walletClient.account,
+					chain: walletClient.chain,
+					...feeOverrides,
+				});
+				await publicClient.waitForTransactionReceipt({ hash: approveHash });
+			}
+
+			toast.message(`Depositing ${depositAmount} ${depositAsset.symbol}...`);
+			const depositHash = await walletClient.writeContract({
+				address: depositAsset.vaultAddress,
+				abi: yieldPilotVaultAbi,
+				functionName: "deposit",
+				args: [parsedAmount, address as Address],
+				account: walletClient.account,
+				chain: walletClient.chain,
+				...feeOverrides,
+			});
+			await publicClient.waitForTransactionReceipt({ hash: depositHash });
+
+			await queryClient.invalidateQueries({
+				queryKey: ["yieldpilot", "multichain-balances"],
+			});
+
+			setDepositAsset(null);
+			setDepositOpen(false);
+			toast.success("Deposit submitted successfully", {
+				description: `${depositAmount} ${depositAsset.symbol} was deposited into ${depositAsset.vaultLabel ?? "the selected vault"}.`,
+			});
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : "Deposit transaction failed";
+			toast.error("Deposit failed", {
+				description: message,
+			});
+		} finally {
+			setIsDepositing(false);
+		}
+	}
 
 	// Filter opportunities for charts consistency
 	const topDepositOpportunities = useMemo(
@@ -233,11 +614,9 @@ function OpportunityDetailPage() {
 					</button>
 
 					<div className="flex items-center gap-2">
-						<Button asChild>
-							<Link href="/">
-								<Wallet className="h-4 w-4" />
-								Deposit
-							</Link>
+						<Button onClick={handleProtocolDeposit}>
+							<Wallet className="h-4 w-4" />
+							Deposit
 						</Button>
 						{primary.url ? (
 							<Button variant="outline" asChild>
@@ -890,6 +1269,142 @@ function OpportunityDetailPage() {
 					</TabsContent>
 				</Tabs>
 			</div>
+
+			<Dialog
+				open={Boolean(noBalanceAsset)}
+				onOpenChange={(open) => {
+					if (!open) setNoBalanceAsset(null);
+				}}
+			>
+				<DialogContent className="max-w-[540px] rounded-[28px] border border-border/80 bg-popover p-0 shadow-[0_24px_80px_rgba(0,0,0,0.38)]">
+					{noBalanceAsset ? (
+						<div className="p-8">
+							<DialogHeader>
+								<Avatar className="mb-5 size-16 border border-border/40">
+									<AvatarImage
+										src={noBalanceAsset.iconUrl}
+										alt={`${noBalanceAsset.name} icon`}
+										className="size-full object-contain bg-background p-2"
+									/>
+									<AvatarFallback
+										className={`bg-gradient-to-br text-2xl font-semibold text-white ${noBalanceAsset.iconClass}`}
+									>
+										{noBalanceAsset.symbol.slice(0, 1)}
+									</AvatarFallback>
+								</Avatar>
+								<DialogTitle className="text-[40px] font-semibold tracking-tight text-foreground">
+									No {noBalanceAsset.symbol} Balance
+								</DialogTitle>
+								<DialogDescription className="mt-2 text-lg leading-relaxed text-muted-foreground">
+									You do not have a supported {noBalanceAsset.symbol} balance
+									ready to deposit right now.
+								</DialogDescription>
+							</DialogHeader>
+
+							<div className="mt-8">
+								<Button
+									className="h-14 w-full rounded-full text-base font-semibold"
+									onClick={() => setNoBalanceAsset(null)}
+								>
+									Got it
+								</Button>
+							</div>
+						</div>
+					) : null}
+				</DialogContent>
+			</Dialog>
+
+			<Dialog
+				open={Boolean(noAdapterAsset)}
+				onOpenChange={(open) => {
+					if (!open) setNoAdapterAsset(null);
+				}}
+			>
+				<DialogContent className="max-w-[540px] rounded-[28px] border border-border/80 bg-popover p-0 shadow-[0_24px_80px_rgba(0,0,0,0.38)]">
+					{noAdapterAsset ? (
+						<div className="p-8">
+							<DialogHeader>
+								<Avatar className="mb-5 size-16 border border-border/40">
+									<AvatarImage
+										src={noAdapterAsset.iconUrl}
+										alt={`${noAdapterAsset.name} icon`}
+										className="size-full object-contain bg-background p-2"
+									/>
+									<AvatarFallback
+										className={`bg-gradient-to-br text-2xl font-semibold text-white ${noAdapterAsset.iconClass}`}
+									>
+										{noAdapterAsset.symbol.slice(0, 1)}
+									</AvatarFallback>
+								</Avatar>
+								<DialogTitle className="text-[40px] font-semibold tracking-tight text-foreground">
+									No adapter configured
+								</DialogTitle>
+								<DialogDescription className="mt-2 text-lg leading-relaxed text-muted-foreground">
+									This protocol route is not wired yet.
+								</DialogDescription>
+							</DialogHeader>
+
+							<div className="mt-8">
+								<Button
+									className="h-14 w-full rounded-full text-base font-semibold"
+									onClick={() => setNoAdapterAsset(null)}
+								>
+									Got it
+								</Button>
+							</div>
+						</div>
+					) : null}
+				</DialogContent>
+			</Dialog>
+
+			<DepositDialog
+				depositAsset={depositAsset}
+				supportedDepositAssets={
+					protocolDepositAsset ? [protocolDepositAsset] : []
+				}
+				mode="protocol"
+				balanceSource={depositBalanceSource}
+				vaultBalance={protocolVaultBalance}
+				onBalanceSourceChange={(source) => {
+					setDepositBalanceSource(source);
+					const availableBalance =
+						source === "vault"
+							? protocolVaultBalance
+							: (depositAsset?.walletBalance ?? 0);
+					setDepositAmount(
+						availableBalance > 0
+							? Math.min(availableBalance, 5000).toString()
+							: "0",
+					);
+				}}
+				title={
+					primary?.adapterAvailable
+						? `Deposit to ${primary.protocolName}`
+						: "Deposit to Vault"
+				}
+				description={
+					primary?.adapterAvailable
+						? `Funds route via the ${primary.protocolName} adapter.`
+						: undefined
+				}
+				onDeposit={() => {
+					if (protocolDepositAsset) {
+						openDeposit(protocolDepositAsset, depositBalanceSource);
+					}
+				}}
+				onClose={() => {
+					setDepositAsset(null);
+					setDepositOpen(false);
+					setDepositBalanceSource("vault");
+				}}
+				isDepositing={isDepositing}
+				depositAmount={depositAmount}
+				setDepositAmount={setDepositAmount}
+				confirmDeposit={confirmDeposit}
+				open={depositOpen}
+				onOpenChange={setDepositOpen}
+				walletReady={Boolean(walletClient && publicClient)}
+			/>
 		</div>
 	);
 }

@@ -195,6 +195,45 @@ contract YieldPilotVault is
         emit StrategyAllocated(strategy, deployedAssets);
     }
 
+
+    /// @notice Deposits assets on behalf of a depositor and deploys them to a strategy. 
+    /// @param depositor Address that will be credited with shares.
+    /// @param receiver Address that will receive the shares.
+    /// @param strategy Strategy adapter address.
+    /// @param assets Asset amount to deposit.
+    /// @return shares Shares minted to the receiver.
+    /// @return deployedAssets Amount accepted by the strategy.
+    
+    function depositAndDeployToStrategyFor(
+        address depositor,
+        address receiver,
+        address strategy,
+        uint256 assets
+    ) external onlyOwner nonReentrant whenNotPaused returns (uint256 shares, uint256 deployedAssets) {
+        if (!isWhitelistedStrategy[strategy]) {
+            revert StrategyNotWhitelisted(strategy);
+        }
+
+        shares = previewDeposit(assets);
+        _deposit(depositor, receiver, assets, shares);
+
+        IERC20 assetToken = IERC20(asset());
+        uint256 strategyBalanceBefore = assetToken.balanceOf(strategy);
+        assetToken.safeTransfer(strategy, assets);
+        uint256 transferredAssets = assetToken.balanceOf(strategy) - strategyBalanceBefore;
+        if (transferredAssets != assets) {
+            revert UnexpectedAssetDelta(assets, transferredAssets);
+        }
+
+        deployedAssets = IStrategyAdapter(strategy).deposit(transferredAssets);
+        if (deployedAssets != transferredAssets) {
+            revert UnexpectedStrategyReportedAssets(strategy, transferredAssets, deployedAssets);
+        }
+
+        _increaseStrategyAssets(strategy, deployedAssets);
+        emit StrategyAllocated(strategy, deployedAssets);
+    }
+
     /// @notice Recalls assets from a whitelisted strategy back into the vault.
     /// @param strategy Strategy adapter address.
     /// @param assets Asset amount to recall.

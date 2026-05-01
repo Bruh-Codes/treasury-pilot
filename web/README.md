@@ -40,8 +40,6 @@ Current product surfaces include:
 - Robinhood Chain testnet wallet support for RWA-oriented product positioning
 - API routes for assets, protocols, opportunities, recommendations, and shared crypto / equity market data
 
-This frontend is product-facing. It does not currently execute the full onchain vault lifecycle by itself without the surrounding backend, deployment, and operator logic.
-
 ## Routes
 
 - `/`: primary Kabon dashboard, wallet-aware deposit flow, and copilot recommendation surface
@@ -65,7 +63,7 @@ NEXT_PUBLIC_REOWN_PROJECT_ID=your_project_id
 
 Example env file:
 
-- [web/.env.example](C:\Users\hp\Desktop\arbs-london\web\.env.example)
+- [web/.env.example](C:\Users\hp\Desktop\arbs-london\web.env.example)
 
 ## Local Development
 
@@ -200,14 +198,7 @@ Kabon is a policy-driven DeFi vault interface where users deposit once and use a
 
 ### Full Description
 
-Kabon focuses on a practical DeFi pain point: yield management is fragmented, time-consuming, and hard to unwind safely. The app provides a vault-oriented UX where users can deposit supported assets, review recommendation context, and inspect live protocol data that supports allocation decisions.
-
-The frontend is designed to expose:
-
-- wallet and network-aware interactions across Arbitrum and Robinhood Chain testnet support
-- recommendation and opportunity surfaces that can drive a future agentic workflow
-- deposit UX today, plus withdrawal messaging that can be extended with live unwind state
-- app routes and APIs that support asset/protocol/opportunity data presentation
+Kabon addresses a practical DeFi problem: yield management is fragmented, time-consuming, and difficult to unwind safely. The web app presents a vault-oriented experience where users can deposit supported assets, review copilot recommendations, inspect live protocol data, and follow withdrawal expectations around a whitelisted vault allocation model.
 
 ### Demo Narration Script (2 minutes)
 

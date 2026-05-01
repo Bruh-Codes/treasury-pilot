@@ -2,14 +2,12 @@
 
 Kabon is a policy-driven DeFi treasury copilot for Arbitrum. Users deposit a supported asset into a vault, receive ERC-4626 vault shares as their receipt, and use a guided product flow to evaluate allocation opportunities, review recommendation logic, and withdraw with clearer unwind expectations.
 
-The product is Arbitrum-first today, with frontend wallet support expanded to include Robinhood Chain testnet so the app can speak credibly to tokenized asset and RWA workflows as that ecosystem opens up.
+The product is Arbitrum-first today, with wallet support expanded to include Robinhood Chain testnet so the app can speak credibly to tokenized asset and RWA workflows as that ecosystem opens up.
 
 This repository contains two workspaces:
 
 - [contracts](C:\Users\hp\Desktop\arbs-london\contracts): Hardhat 3 smart contracts, proxy deployment modules, and tests
 - [web](C:\Users\hp\Desktop\arbs-london\web): Next.js frontend, wallet integration, and app-facing API routes
-
-Hackathon-ready pitch copy lives in [PITCH.md](C:\Users\hp\Desktop\arbs-london\PITCH.md).
 
 ## Product Model
 
@@ -17,13 +15,15 @@ Kabon is built around one vault per supported asset.
 
 At a high level:
 
-1. a user deposits an ERC-20 asset into the vault
+1. a user deposits an asset into the vault
 2. the vault mints ERC-4626 shares to the user
 3. the vault operator can deploy idle liquidity into approved strategy adapters
 4. users withdraw by redeeming shares for underlying assets
 5. if idle liquidity is insufficient, the vault recalls liquidity from strategies using a configured withdrawal queue
 
 The user does not have to exit protocols one by one. Their position is represented by vault shares, while the vault manages the underlying routing.
+
+Execution is therefore vault-mediated rather than protocol-by-protocol from the user wallet. Kabon recommends and frames compliant routes, while approved operator flows and whitelisted adapters perform the underlying allocation on behalf of vault participants.
 
 ## Repository Layout
 
@@ -148,29 +148,29 @@ Kabon is a policy-driven vault copilot that helps users and DAOs deposit once, e
 - `Recommendation details`: covered inline through copilot signals and recommendation detail UI
 - `Withdraw flow`: supported by the vault model and surfaced through the product UX
 - `Activity history`: supported in the app structure and ready for deeper indexing integration
-- `AI layer`: recommendation logic, rationale, and policy-aware guidance are implemented in the copilot experience
+- `AI layer`: recommendation logic, rationale, and policy-aware guidance are implemented in the copilot experience, with execution framed around whitelisted vault allocation flows
 - `Deployment`: not complete yet
 
 ### Judging Criteria Mapping
 
 - **Smart contract quality**: upgradeable vault architecture, non-reentrant entrypoints, strategy accounting checks, and test coverage for deploy/withdraw/unwind/upgrade flows
 - **Product-market fit**: targeted at users and treasuries that want simplified yield operations
-- **Innovation and creativity**: combines shared-vault UX with agentic recommendation and execution framing
-- **Real problem solving**: reduces fragmented yield management and makes unwind behavior explicit
 
-### 2-Minute Demo Flow
+The architecture in this repo is best extended by adding an operator allocation flow from idle vault liquidity into whitelisted strategy adapters.
 
-1. connect wallet and select supported Arbitrum chain
-2. deposit into the vault-backed flow
-3. show the Kabon Copilot recommendation and rationale (APY/liquidity/risk context)
-4. open the protocol explorer to validate the recommended venue against live market data
-5. explain that allocation execution, withdrawal queue UX, and indexed activity are the next deployment-phase steps
+That means the next execution milestone should look like:
+
+1. the user deposits into a Kabon vault
+2. Kabon ranks and explains approved opportunities
+3. an operator or authorized execution layer deploys idle vault assets into a whitelisted adapter
+4. the vault continues to represent the user position through ERC-4626 shares
+
+This is how Kabon approaches “stake on behalf of the user”: through vault-level allocation on behalf of depositors rather than direct protocol-by-protocol interaction from the user wallet.
 
 ### Submission Checklist
 
 - deployed on an eligible Arbitrum ecosystem chain
 - at least one Robinhood Chain-facing path included in the user flow
-- demo video link, deployment addresses, and setup steps documented
 - test commands and expected outputs documented for reviewers
 
 Current note on April 27, 2026: Robinhood Chain support is already present in wallet/network readiness, while production deployment addresses and final live environment wiring still need to be completed before final submission.

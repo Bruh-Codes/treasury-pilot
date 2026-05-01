@@ -161,6 +161,9 @@ export default function WithdrawPage() {
 						(entry) =>
 							entry.chainId === chain.id && entry.symbol === asset.symbol,
 					);
+					const summaryAsset = assetSummaries.data?.assets?.find(
+						(entry) => entry.symbol === asset.symbol,
+					);
 					return {
 						key: `${chain.id}:${asset.vaultAddress.toLowerCase()}`,
 						chainId: chain.id,
@@ -171,13 +174,14 @@ export default function WithdrawPage() {
 						vaultAddress: asset.vaultAddress,
 						vaultLabel: asset.vaultLabel,
 						iconUrl:
+							summaryAsset?.iconUrl ??
 							registryAsset?.iconUrl ??
 							getKnownAssetIcon(asset.symbol) ??
 							getTrustWalletIconUrl(asset.tokenAddress, asset.symbol, chain.id),
 					};
 				}),
 			),
-		[chainOptions, registryAssets],
+		[assetSummaries.data?.assets, chainOptions, registryAssets],
 	);
 
 	const multichainBalances = useMultichainBalances(
@@ -281,16 +285,25 @@ export default function WithdrawPage() {
 		? (vaultAssets.find((asset) => asset.id === withdrawAsset.id) ??
 			withdrawAsset)
 		: null;
+	const activeWithdrawAssetChainId = activeWithdrawAsset?.chainId;
+	const activeWithdrawVaultAddress = activeWithdrawAsset?.vaultAddress;
+	const activeWithdrawTokenDecimals = activeWithdrawAsset?.tokenDecimals;
+	const showPreviewLoading = previewLoading && !withdrawPreview;
 
 	useEffect(() => {
 		let cancelled = false;
 
 		async function loadPreview() {
+			const vaultAddress = activeWithdrawAsset?.vaultAddress;
+			const tokenDecimals = activeWithdrawAsset?.tokenDecimals;
+
 			if (
 				!withdrawOpen ||
 				!activeWithdrawAsset ||
-				chainId !== activeWithdrawAsset.chainId ||
-				!publicClient
+				chainId !== activeWithdrawAssetChainId ||
+				!publicClient ||
+				!vaultAddress ||
+				tokenDecimals === undefined
 			) {
 				setWithdrawPreview(null);
 				setPreviewLoading(false);
@@ -306,19 +319,16 @@ export default function WithdrawPage() {
 
 			try {
 				setPreviewLoading(true);
-				const parsedAmount = parseUnits(
-					withdrawAmount,
-					activeWithdrawAsset.tokenDecimals,
-				);
+				const parsedAmount = parseUnits(withdrawAmount, tokenDecimals);
 				const [feePreview, sharesToBurn] = await Promise.all([
 					publicClient.readContract({
-						address: activeWithdrawAsset.vaultAddress,
+						address: vaultAddress,
 						abi: yieldPilotVaultAbi,
 						functionName: "previewWithdrawalFee",
 						args: [parsedAmount],
 					}),
 					publicClient.readContract({
-						address: activeWithdrawAsset.vaultAddress,
+						address: vaultAddress,
 						abi: yieldPilotVaultAbi,
 						functionName: "previewWithdraw",
 						args: [parsedAmount],
@@ -328,14 +338,10 @@ export default function WithdrawPage() {
 				if (cancelled) return;
 
 				setWithdrawPreview({
-					availableNow:
-						Number(feePreview[0]) / 10 ** activeWithdrawAsset.tokenDecimals,
-					needsUnwind:
-						Number(feePreview[1]) / 10 ** activeWithdrawAsset.tokenDecimals,
-					feeAssets:
-						Number(feePreview[2]) / 10 ** activeWithdrawAsset.tokenDecimals,
-					sharesToBurn:
-						Number(sharesToBurn) / 10 ** activeWithdrawAsset.tokenDecimals,
+					availableNow: Number(feePreview[0]) / 10 ** tokenDecimals,
+					needsUnwind: Number(feePreview[1]) / 10 ** tokenDecimals,
+					feeAssets: Number(feePreview[2]) / 10 ** tokenDecimals,
+					sharesToBurn: Number(sharesToBurn) / 10 ** tokenDecimals,
 				});
 			} catch {
 				if (!cancelled) {
@@ -354,7 +360,9 @@ export default function WithdrawPage() {
 			cancelled = true;
 		};
 	}, [
-		activeWithdrawAsset,
+		activeWithdrawAssetChainId,
+		activeWithdrawTokenDecimals,
+		activeWithdrawVaultAddress,
 		chainId,
 		publicClient,
 		withdrawAmount,
@@ -723,7 +731,7 @@ export default function WithdrawPage() {
 												Available now
 											</span>
 											<span className="font-medium text-foreground">
-												{previewLoading
+												{showPreviewLoading
 													? "Loading..."
 													: formatAssetAmount(
 															withdrawPreview?.availableNow ?? 0,
@@ -736,7 +744,7 @@ export default function WithdrawPage() {
 												Needs unwind
 											</span>
 											<span className="font-medium text-foreground">
-												{previewLoading
+												{showPreviewLoading
 													? "Loading..."
 													: formatAssetAmount(
 															withdrawPreview?.needsUnwind ?? 0,
@@ -749,7 +757,7 @@ export default function WithdrawPage() {
 												Estimated fee
 											</span>
 											<span className="font-medium text-foreground">
-												{previewLoading
+												{showPreviewLoading
 													? "Loading..."
 													: formatAssetAmount(
 															withdrawPreview?.feeAssets ?? 0,

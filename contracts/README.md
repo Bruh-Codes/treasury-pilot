@@ -14,6 +14,19 @@ Core components:
 - `YieldPilotVaultUpgradeMock.sol`: test-only upgrade target used to verify storage continuity and upgrade execution
 - mocks for assets and adversarial adapters used in the test suite
 
+## Contract Execution Model
+
+The contract system is built around vault-mediated execution rather than direct protocol-by-protocol interaction from the user wallet.
+
+Instead:
+
+1. users deposit assets into a Kabon ERC-4626 vault
+2. the vault mints shares representing the user position
+3. an owner or authorized operator deploys idle vault liquidity into whitelisted strategy adapters
+4. withdrawals are serviced from idle liquidity first, then from recalls through the configured queue
+
+Protocol execution is therefore adapter-mediated and vault-level, while the user-facing product remains share-based.
+
 ## Vault Mechanics
 
 ### User flow
@@ -152,13 +165,13 @@ Example parameter file:
 
 ```json
 {
-  "YieldPilotVaultProxyModule": {
-    "asset": "0xYourAssetAddress",
-    "name": "Kabon USDC Vault",
-    "symbol": "kbUSDC",
-    "feeRecipient": "0xYourTreasuryAddress",
-    "unwindFeeBps": 500
-  }
+	"YieldPilotVaultProxyModule": {
+		"asset": "0xYourAssetAddress",
+		"name": "Kabon USDC Vault",
+		"symbol": "kbUSDC",
+		"feeRecipient": "0xYourTreasuryAddress",
+		"unwindFeeBps": 500
+	}
 }
 ```
 
@@ -172,16 +185,16 @@ Example upgrade parameter file:
 
 ```json
 {
-  "YieldPilotVaultProxyModule": {
-    "asset": "0xYourAssetAddress",
-    "name": "Kabon USDC Vault",
-    "symbol": "kbUSDC",
-    "feeRecipient": "0xYourTreasuryAddress",
-    "unwindFeeBps": 500
-  },
-  "YieldPilotVaultUpgradeModule": {
-    "reserveTargetBps": 2000
-  }
+	"YieldPilotVaultProxyModule": {
+		"asset": "0xYourAssetAddress",
+		"name": "Kabon USDC Vault",
+		"symbol": "kbUSDC",
+		"feeRecipient": "0xYourTreasuryAddress",
+		"unwindFeeBps": 500
+	},
+	"YieldPilotVaultUpgradeModule": {
+		"reserveTargetBps": 2000
+	}
 }
 ```
 
@@ -268,6 +281,13 @@ Status checked on April 27, 2026:
 - the contract suite passes locally
 - deposit, withdraw, allocation, unwind, upgrade, and guardrail behavior are covered in tests
 - this workspace is ahead of the current deployed-demo state; the remaining gap is live deployment and frontend wiring, not base vault behavior
+
+### What The Contracts Prove In The Submission
+
+- Kabon uses a real upgradeable ERC-4626 vault rather than a mock balance tracker
+- strategy execution is constrained to whitelisted adapters
+- withdrawals model actual operational unwind behavior through idle-liquidity checks and queue-based recalls
+- the architecture supports “allocation on behalf of depositors” at the vault layer without requiring users to manage each protocol leg individually
 
 ### Why This Contract Design Fits Judging
 
