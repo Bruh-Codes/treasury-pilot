@@ -8,6 +8,7 @@ import { Geist } from "next/font/google";
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ReownProvider } from "@/components/providers/reown-provider";
+import SubGraphProvider from "@/components/dashboard/subgraph-provider";
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-sans" });
 
@@ -38,20 +39,22 @@ export default function RootLayout({
 				<meta name="viewport" content="width=device-width, initial-scale=1" />
 			</head>
 			<body>
-				<ReownProvider>
-					<TooltipProvider>
-						<SidebarProvider defaultOpen>
-							<div className="flex min-h-screen w-full overflow-x-hidden bg-background text-foreground">
-								<AppSidebar />
-								<SidebarInset className="flex min-h-screen min-w-0 flex-1 flex-col bg-background">
-									<TopBar />
-									<main className="flex-1 min-w-0">{children}</main>
-								</SidebarInset>
-								<Toaster />
-							</div>
-						</SidebarProvider>
-					</TooltipProvider>
-				</ReownProvider>
+				<SubGraphProvider>
+					<ReownProvider>
+						<TooltipProvider>
+							<SidebarProvider defaultOpen>
+								<div className="flex min-h-screen w-full overflow-x-hidden bg-background text-foreground">
+									<AppSidebar />
+									<SidebarInset className="flex min-h-screen min-w-0 flex-1 flex-col bg-background">
+										<TopBar />
+										<main className="flex-1 min-w-0">{children}</main>
+									</SidebarInset>
+									<Toaster />
+								</div>
+							</SidebarProvider>
+						</TooltipProvider>
+					</ReownProvider>
+				</SubGraphProvider>
 			</body>
 		</html>
 	);
