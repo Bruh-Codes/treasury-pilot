@@ -1,0 +1,18 @@
+{
+	"name": "kabon-vault-subgraph",
+	"version": "0.1.0",
+	"scripts": {
+		"codegen": "graph codegen",
+		"build": "graph build",
+		"deploy": "graph deploy --product hosted-service kabon-vault",
+		"deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 kabon-vault",
+		"create-local": "graph create --node http://localhost:8020/ kabon-vault",
+		"remove-local": "graph remove --node http://localhost:8020/ kabon-vault"
+	},
+	"dependencies": {
+		"@graphprotocol/graph-cli": "^0.74.0"
+	},
+	"devDependencies": {
+		"@graphprotocol/graph-ts": "^0.31.0"
+	}
+}

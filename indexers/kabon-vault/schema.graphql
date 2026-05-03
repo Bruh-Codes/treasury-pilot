@@ -1,0 +1,56 @@
+type Deposit @entity(immutable: true) {
+	id: ID!
+	sender: Bytes!
+	owner: Bytes!
+	assets: BigInt!
+	shares: BigInt!
+	blockNumber: BigInt!
+	transactionHash: Bytes!
+	timestamp: BigInt!
+}
+
+type Withdraw @entity(immutable: true) {
+	id: ID!
+	sender: Bytes!
+	receiver: Bytes!
+	owner: Bytes!
+	assets: BigInt!
+	shares: BigInt!
+	blockNumber: BigInt!
+	transactionHash: Bytes!
+	timestamp: BigInt!
+}
+
+type StrategyAllocated @entity(immutable: true) {
+	id: ID!
+	strategy: Bytes!
+	assets: BigInt!
+	blockNumber: BigInt!
+	transactionHash: Bytes!
+	timestamp: BigInt!
+}
+
+type StrategyRecalled @entity(immutable: true) {
+	id: ID!
+	strategy: Bytes!
+	assets: BigInt!
+	blockNumber: BigInt!
+	transactionHash: Bytes!
+	timestamp: BigInt!
+}
+
+type StrategyWhitelisted @entity(immutable: true) {
+	id: ID!
+	strategy: Bytes!
+	blockNumber: BigInt!
+	transactionHash: Bytes!
+	timestamp: BigInt!
+}
+
+type WithdrawalQueueUpdated @entity(immutable: true) {
+	id: ID!
+	queue: [Bytes!]!
+	blockNumber: BigInt!
+	transactionHash: Bytes!
+	timestamp: BigInt!
+}
