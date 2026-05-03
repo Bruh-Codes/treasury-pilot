@@ -5,6 +5,7 @@ import {
 	ArrowDownCircle,
 	ArrowUpCircle,
 	TrendingUp,
+	ExternalLink,
 } from "lucide-react";
 import { useAccount } from "wagmi";
 import {
@@ -58,6 +59,10 @@ function ActivityPage() {
 		);
 	};
 
+	const openBlockscan = (txHash: string) => {
+		window.open(`https://sepolia.arbiscan.io/tx/${txHash}`, "_blank");
+	};
+
 	return (
 		<div className="px-6 py-8 md:px-10 md:py-10">
 			<div className="flex flex-col gap-1">
@@ -65,7 +70,8 @@ function ActivityPage() {
 					Activity
 				</h1>
 				<p className="max-w-2xl text-sm text-muted-foreground">
-					Real-time vault activity indexed from the blockchain.
+					Real-time vault activity indexed from the blockchain. Double-click
+					transactions to view on blockscan.
 				</p>
 			</div>
 
@@ -89,7 +95,8 @@ function ActivityPage() {
 							{userDeposits?.map((deposit) => (
 								<div
 									key={deposit.id}
-									className="flex items-center justify-between px-6 py-4"
+									className="group flex items-center justify-between px-6 py-4 transition-colors hover:bg-muted/50 cursor-pointer"
+									onDoubleClick={() => openBlockscan(deposit.transactionHash)}
 								>
 									<div className="flex items-center gap-4">
 										<div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/10 text-green-500">
@@ -103,13 +110,16 @@ function ActivityPage() {
 											</div>
 										</div>
 									</div>
-									<div className="text-right">
-										<div className="font-medium">
-											{formatAmount(deposit.assets)} USDC
+									<div className="flex items-center gap-4">
+										<div className="text-right">
+											<div className="font-medium">
+												{formatAmount(deposit.assets)} USDC
+											</div>
+											<div className="text-sm text-muted-foreground">
+												{formatTimestamp(deposit.timestamp)}
+											</div>
 										</div>
-										<div className="text-sm text-muted-foreground">
-											{formatTimestamp(deposit.timestamp)}
-										</div>
+										<ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
 									</div>
 								</div>
 							))}
@@ -126,7 +136,8 @@ function ActivityPage() {
 							{userWithdrawals?.map((withdraw) => (
 								<div
 									key={withdraw.id}
-									className="flex items-center justify-between px-6 py-4"
+									className="group flex items-center justify-between px-6 py-4 transition-colors hover:bg-muted/50 cursor-pointer"
+									onDoubleClick={() => openBlockscan(withdraw.transactionHash)}
 								>
 									<div className="flex items-center gap-4">
 										<div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/10 text-red-500">
@@ -140,13 +151,16 @@ function ActivityPage() {
 											</div>
 										</div>
 									</div>
-									<div className="text-right">
-										<div className="font-medium">
-											{formatAmount(withdraw.assets)} USDC
+									<div className="flex items-center gap-4">
+										<div className="text-right">
+											<div className="font-medium">
+												{formatAmount(withdraw.assets)} USDC
+											</div>
+											<div className="text-sm text-muted-foreground">
+												{formatTimestamp(withdraw.timestamp)}
+											</div>
 										</div>
-										<div className="text-sm text-muted-foreground">
-											{formatTimestamp(withdraw.timestamp)}
-										</div>
+										<ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
 									</div>
 								</div>
 							))}
@@ -165,7 +179,8 @@ function ActivityPage() {
 							{allDeposits?.slice(0, 10).map((deposit) => (
 								<div
 									key={deposit.id}
-									className="flex items-center justify-between px-6 py-4"
+									className="group flex items-center justify-between px-6 py-4 transition-colors hover:bg-muted/50 cursor-pointer"
+									onDoubleClick={() => openBlockscan(deposit.transactionHash)}
 								>
 									<div className="flex items-center gap-4">
 										<div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-500/10 text-green-500">
@@ -179,13 +194,16 @@ function ActivityPage() {
 											</div>
 										</div>
 									</div>
-									<div className="text-right">
-										<div className="font-medium">
-											{formatAmount(deposit.assets)} USDC
+									<div className="flex items-center gap-4">
+										<div className="text-right">
+											<div className="font-medium">
+												{formatAmount(deposit.assets)} USDC
+											</div>
+											<div className="text-sm text-muted-foreground">
+												{formatTimestamp(deposit.timestamp)}
+											</div>
 										</div>
-										<div className="text-sm text-muted-foreground">
-											{formatTimestamp(deposit.timestamp)}
-										</div>
+										<ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
 									</div>
 								</div>
 							))}
@@ -202,7 +220,8 @@ function ActivityPage() {
 							{allWithdrawals?.slice(0, 10).map((withdraw) => (
 								<div
 									key={withdraw.id}
-									className="flex items-center justify-between px-6 py-4"
+									className="group flex items-center justify-between px-6 py-4 transition-colors hover:bg-muted/50 cursor-pointer"
+									onDoubleClick={() => openBlockscan(withdraw.transactionHash)}
 								>
 									<div className="flex items-center gap-4">
 										<div className="flex h-10 w-10 items-center justify-center rounded-full bg-red-500/10 text-red-500">
@@ -216,13 +235,16 @@ function ActivityPage() {
 											</div>
 										</div>
 									</div>
-									<div className="text-right">
-										<div className="font-medium">
-											{formatAmount(withdraw.assets)} USDC
+									<div className="flex items-center gap-4">
+										<div className="text-right">
+											<div className="font-medium">
+												{formatAmount(withdraw.assets)} USDC
+											</div>
+											<div className="text-sm text-muted-foreground">
+												{formatTimestamp(withdraw.timestamp)}
+											</div>
 										</div>
-										<div className="text-sm text-muted-foreground">
-											{formatTimestamp(withdraw.timestamp)}
-										</div>
+										<ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
 									</div>
 								</div>
 							))}
@@ -240,7 +262,10 @@ function ActivityPage() {
 								{strategyAllocations.slice(0, 10).map((allocation) => (
 									<div
 										key={allocation.id}
-										className="flex items-center justify-between px-6 py-4"
+										className="group flex items-center justify-between px-6 py-4 transition-colors hover:bg-muted/50 cursor-pointer"
+										onDoubleClick={() =>
+											openBlockscan(allocation.transactionHash)
+										}
 									>
 										<div className="flex items-center gap-4">
 											<div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-500/10 text-blue-500">
@@ -253,13 +278,16 @@ function ActivityPage() {
 												</div>
 											</div>
 										</div>
-										<div className="text-right">
-											<div className="font-medium">
-												{formatAmount(allocation.assets)} USDC
+										<div className="flex items-center gap-4">
+											<div className="text-right">
+												<div className="font-medium">
+													{formatAmount(allocation.assets)} USDC
+												</div>
+												<div className="text-sm text-muted-foreground">
+													{formatTimestamp(allocation.timestamp)}
+												</div>
 											</div>
-											<div className="text-sm text-muted-foreground">
-												{formatTimestamp(allocation.timestamp)}
-											</div>
+											<ExternalLink className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
 										</div>
 									</div>
 								))}

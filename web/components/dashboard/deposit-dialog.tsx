@@ -280,7 +280,9 @@ export function DepositDialog({
 											: "Available"}
 									</span>
 									<span className="text-muted-foreground">
-										{selectedAvailableBalance.toLocaleString()}{" "}
+										{selectedAvailableBalance.toLocaleString(undefined, {
+											maximumFractionDigits: 6,
+										})}{" "}
 										{depositAsset?.symbol}
 									</span>
 									{isProtocolMode ? (

@@ -72,6 +72,16 @@ export const yieldPilotVaultAbi = [
 	},
 	{
 		type: "function",
+		name: "recall",
+		stateMutability: "nonpayable",
+		inputs: [
+			{ name: "strategy", type: "address" },
+			{ name: "assets", type: "uint256" },
+		],
+		outputs: [{ name: "recalledAssets", type: "uint256" }],
+	},
+	{
+		type: "function",
 		name: "redeem",
 		stateMutability: "nonpayable",
 		inputs: [

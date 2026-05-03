@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useAppKitAccount } from "@reown/appkit/react";
 import { useChainId, usePublicClient, useWalletClient } from "wagmi";
 import { parseUnits, type Address } from "viem";
 import { EllipsisVertical, Search, Wallet } from "lucide-react";
 import { toast } from "sonner";
+import { useSearchParams } from "next/navigation";
 
 import { Card, PageHeader } from "@/components/page-primitives";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -37,6 +38,10 @@ import {
 } from "@/lib/use-yieldpilot-market-data";
 import { yieldPilotVaultAbi } from "@/lib/vault-abi";
 import { getSupportedVaultAssets } from "@/lib/vault-registry";
+import {
+	useStrategyAllocations,
+	useStrategyRecalls,
+} from "@/lib/subgraph/hooks";
 
 type VaultAssetItem = {
 	id: string;
@@ -53,6 +58,8 @@ type VaultAssetItem = {
 	walletBalance: number;
 	depositedAssets: number;
 	depositedShares: number;
+	idleAssets: number;
+	deployedAssets: number;
 	unitPriceUsd: number | null;
 	valueUsd: number | null;
 };
@@ -133,12 +140,15 @@ function getAssetIconClass(symbol: string) {
 export default function WithdrawPage() {
 	const { address } = useAppKitAccount();
 	const chainId = useChainId();
+	const searchParams = useSearchParams();
 	const chainOptions = getChainOptions();
 	const assetSummaries = useAssetSummaries();
 	const assetRegistry = useAssetRegistry();
 	const publicClient = usePublicClient();
 	const { data: walletClient } = useWalletClient();
 	const queryClient = useYieldpilotQueryClient();
+	const { data: allocations } = useStrategyAllocations();
+	const { data: recalls } = useStrategyRecalls();
 
 	const [search, setSearch] = useState("");
 	const [withdrawAsset, setWithdrawAsset] = useState<VaultAssetItem | null>(
@@ -150,6 +160,7 @@ export default function WithdrawPage() {
 	const [withdrawPreview, setWithdrawPreview] =
 		useState<WithdrawalPreview | null>(null);
 	const [previewLoading, setPreviewLoading] = useState(false);
+	const hasProcessedEndPosition = useRef(false);
 
 	const registryAssets = assetRegistry.data?.assets ?? [];
 
@@ -230,6 +241,31 @@ export default function WithdrawPage() {
 				const chainLabel =
 					getChainById(asset.chainId)?.name ?? `Chain ${asset.chainId}`;
 
+				// Calculate deployed assets (in strategies) for this vault
+				// Note: This is a simplified calculation - assumes all allocations are for this vault
+				// In a real scenario, we'd need to filter by vault address
+				let deployedAssets = 0;
+				if (allocations && recalls) {
+					const strategyMap = new Map<string, bigint>();
+					allocations.forEach((alloc) => {
+						const current = strategyMap.get(alloc.strategy) || 0n;
+						strategyMap.set(alloc.strategy, current + BigInt(alloc.assets));
+					});
+					recalls.forEach((recall) => {
+						const current = strategyMap.get(recall.strategy) || 0n;
+						strategyMap.set(recall.strategy, current - BigInt(recall.assets));
+					});
+					// Sum all deployed assets (convert from 6 decimals to normal)
+					deployedAssets = Array.from(strategyMap.values()).reduce(
+						(sum, assets) => sum + Number(assets) / 1_000_000,
+						0,
+					);
+				}
+
+				// Ensure deployed doesn't exceed deposited (can happen due to data timing or dust)
+				deployedAssets = Math.min(deployedAssets, depositedAssets);
+				const idleAssets = Math.max(0, depositedAssets - deployedAssets);
+
 				return {
 					id: asset.key,
 					name: asset.name,
@@ -245,6 +281,8 @@ export default function WithdrawPage() {
 					walletBalance,
 					depositedAssets,
 					depositedShares,
+					idleAssets,
+					deployedAssets,
 					unitPriceUsd,
 					valueUsd:
 						typeof unitPriceUsd === "number"
@@ -259,6 +297,8 @@ export default function WithdrawPage() {
 		multichainVaultPositions.data?.positions,
 		tokenPrices.data?.prices,
 		trackedVaultAssets,
+		allocations,
+		recalls,
 	]);
 
 	const filteredAssets = useMemo(() => {
@@ -280,6 +320,36 @@ export default function WithdrawPage() {
 			}, 0),
 		[vaultAssets],
 	);
+
+	// Auto-open withdraw modal if coming from End position action
+	useEffect(() => {
+		if (hasProcessedEndPosition.current) {
+			return;
+		}
+
+		const action = searchParams.get("action");
+		const assetParam = searchParams.get("asset");
+
+		// Only proceed if vaultAssets is populated
+		if (!vaultAssets || vaultAssets.length === 0) {
+			return;
+		}
+
+		if (action === "end-position" && assetParam) {
+			const matchingAsset = vaultAssets.find(
+				(asset) => asset.symbol === assetParam,
+			);
+			if (matchingAsset) {
+				setWithdrawAsset(matchingAsset);
+				// Use user's deposited assets (max) instead of strategy allocation
+				setWithdrawAmount(matchingAsset.depositedAssets.toString());
+				setWithdrawOpen(true);
+				// Clear params to prevent re-opening on refresh
+				window.history.replaceState({}, "", "/withdraw");
+				hasProcessedEndPosition.current = true;
+			}
+		}
+	}, [vaultAssets, searchParams]);
 
 	const activeWithdrawAsset = withdrawAsset
 		? (vaultAssets.find((asset) => asset.id === withdrawAsset.id) ??
@@ -401,6 +471,23 @@ export default function WithdrawPage() {
 				activeWithdrawAsset.tokenDecimals,
 			);
 
+			// Estimate gas fees with a buffer for Arbitrum Sepolia volatility
+			const feeEstimate = await publicClient.estimateFeesPerGas();
+			const baseFeeBuffer = 5000000n; // 5 gwei buffer
+			const feeOverrides =
+				typeof feeEstimate.maxFeePerGas === "bigint" &&
+				typeof feeEstimate.maxPriorityFeePerGas === "bigint"
+					? {
+							maxFeePerGas: feeEstimate.maxFeePerGas + baseFeeBuffer,
+							maxPriorityFeePerGas:
+								feeEstimate.maxPriorityFeePerGas + baseFeeBuffer,
+						}
+					: typeof feeEstimate.gasPrice === "bigint"
+						? {
+								gasPrice: feeEstimate.gasPrice + baseFeeBuffer,
+							}
+						: {};
+
 			toast.message(
 				`Submitting withdrawal for ${withdrawAmount} ${activeWithdrawAsset.symbol}...`,
 			);
@@ -412,6 +499,7 @@ export default function WithdrawPage() {
 				args: [parsedAmount, address as Address, address as Address],
 				account: walletClient.account,
 				chain: walletClient.chain,
+				...feeOverrides,
 			});
 
 			await publicClient.waitForTransactionReceipt({ hash });
@@ -524,13 +612,14 @@ export default function WithdrawPage() {
 					</div>
 				) : (
 					<div className="overflow-x-auto">
-						<div className="min-w-[980px]">
-							<div className="grid grid-cols-[minmax(260px,2fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(140px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_44px] gap-4 border-b border-border/30 bg-muted/15 px-6 py-3 text-[10px] uppercase tracking-[0.16em] text-muted-foreground/80">
+						<div className="min-w-[860px]">
+							<div className="grid grid-cols-[minmax(200px,2fr)_100px_80px_80px_100px_100px_100px_44px] gap-4 border-b border-border/30 bg-muted/15 px-6 py-3 text-[10px] uppercase tracking-[0.16em] text-muted-foreground/80">
 								<div>Asset</div>
 								<div>Wallet Balance</div>
-								<div>Deposited</div>
+								<div>Idle</div>
+								<div>Deployed</div>
+								<div>Total Deposited</div>
 								<div>Vault Value</div>
-								<div>Vault Shares</div>
 								<div>Chain</div>
 								<div />
 							</div>
@@ -547,7 +636,7 @@ export default function WithdrawPage() {
 												openWithdraw(asset);
 											}
 										}}
-										className="grid cursor-pointer grid-cols-[minmax(260px,2fr)_minmax(120px,1fr)_minmax(120px,1fr)_minmax(140px,1fr)_minmax(120px,1fr)_minmax(120px,1fr)_44px] gap-4 px-6 py-4 transition-colors hover:bg-muted/20"
+										className="grid cursor-pointer grid-cols-[minmax(200px,2fr)_100px_80px_80px_100px_100px_100px_44px] gap-4 px-6 py-4 transition-colors hover:bg-muted/20"
 									>
 										<div className="flex min-w-0 items-center gap-3">
 											<Avatar className="size-10 border border-border/30">
@@ -574,14 +663,17 @@ export default function WithdrawPage() {
 										<div className="flex items-center text-sm text-muted-foreground">
 											{formatAssetAmount(asset.walletBalance, asset.symbol)}
 										</div>
+										<div className="flex items-center text-sm text-emerald-600">
+											{formatAssetAmount(asset.idleAssets, asset.symbol)}
+										</div>
+										<div className="flex items-center text-sm text-amber-600">
+											{formatAssetAmount(asset.deployedAssets, asset.symbol)}
+										</div>
 										<div className="flex items-center text-sm font-medium text-foreground">
 											{formatAssetAmount(asset.depositedAssets, asset.symbol)}
 										</div>
 										<div className="flex items-center text-sm text-muted-foreground">
 											{formatUsd(asset.valueUsd)}
-										</div>
-										<div className="flex items-center text-sm text-muted-foreground">
-											{formatWalletBalance(asset.depositedShares)}
 										</div>
 										<div className="flex items-center text-sm text-muted-foreground">
 											{asset.chainLabel}
@@ -700,15 +792,38 @@ export default function WithdrawPage() {
 											{activeWithdrawAsset.symbol}
 										</span>
 									</div>
-									<div className="mt-2 flex items-center justify-between text-sm">
-										<span className="text-muted-foreground">
-											Deposited:{" "}
-											{formatAssetAmount(
-												activeWithdrawAsset.depositedAssets,
-												activeWithdrawAsset.symbol,
-											)}
-										</span>
+									<div className="mt-2 flex items-center justify-between gap-4 text-[11px]">
+										<div className="text-muted-foreground whitespace-nowrap">
+											Idle:{" "}
+											<span className="text-emerald-600">
+												{formatWalletBalance(activeWithdrawAsset.idleAssets)}{" "}
+												{activeWithdrawAsset.symbol}
+											</span>
+										</div>
+										<div className="text-muted-foreground whitespace-nowrap">
+											Deployed:{" "}
+											<span className="text-amber-600">
+												{formatWalletBalance(
+													activeWithdrawAsset.deployedAssets,
+												)}{" "}
+												{activeWithdrawAsset.symbol}
+											</span>
+										</div>
 									</div>
+									{activeWithdrawAsset.idleAssets > 0 && (
+										<Button
+											variant="ghost"
+											size="sm"
+											className="mt-2 w-full text-xs text-emerald-600"
+											onClick={() =>
+												setWithdrawAmount(
+													activeWithdrawAsset.idleAssets.toString(),
+												)
+											}
+										>
+											Withdraw Max Idle
+										</Button>
+									)}
 								</div>
 
 								<div className="rounded-xl border border-border/60 bg-muted/20 p-4">

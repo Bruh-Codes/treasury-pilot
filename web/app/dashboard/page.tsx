@@ -65,6 +65,7 @@ import { ReceiveDialog } from "@/components/dashboard/receive-dialog";
 import SearchPill from "@/components/dashboard/search-pill";
 import DashboardPageSkeleton from "@/components/dashboard/dashboard-skeleton";
 import { getKnownAssetIcon } from "@/lib/asset-icon-map";
+import { PositionsCard } from "@/components/dashboard/positions-card";
 
 type AssetItem = {
 	id: string;
@@ -228,7 +229,7 @@ function compactAmount(value: number) {
 }
 
 function formatWalletBalance(value: number) {
-	if (!Number.isFinite(value) || value <= 0) {
+	if (!value || isNaN(value)) {
 		return "-";
 	}
 
@@ -1478,6 +1479,7 @@ export default function DashboardPage() {
 							</Card>
 						</div>
 					</div>
+					<PositionsCard />
 
 					<Card className="rounded-[28px] border-border bg-card/90 py-0 shadow-[0_20px_80px_rgba(0,0,0,0.32)]">
 						<CardHeader className="gap-5 border-b border-border px-5 py-5 md:px-8">

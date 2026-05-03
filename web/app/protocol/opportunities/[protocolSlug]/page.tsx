@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useAppKitAccount } from "@reown/appkit/react";
 import { useChainId, usePublicClient, useWalletClient } from "wagmi";
@@ -13,6 +13,7 @@ import {
 	Info,
 	Loader2,
 	Wallet,
+	X,
 } from "lucide-react";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 
@@ -27,6 +28,7 @@ import {
 } from "@/components/ui/chart";
 import {
 	Dialog,
+	DialogClose,
 	DialogContent,
 	DialogDescription,
 	DialogHeader,
@@ -48,16 +50,20 @@ import {
 } from "@/components/ui/pagination";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { DepositDialog } from "@/components/dashboard/deposit-dialog";
+import { ProtocolWithdrawDialog } from "@/components/dashboard/protocol-withdraw-dialog";
 import { getKnownAssetIcon } from "@/lib/asset-icon-map";
 import { getChainById } from "@/lib/chain-utils";
 import { yieldPilotVaultAbi } from "@/lib/vault-abi";
+import { aavePoolAbi, AAVE_POOL_ADDRESSES } from "@/lib/aave-pool-abi";
 import { getSupportedVaultAsset } from "@/lib/vault-registry";
+import { getStrategyInfo } from "@/lib/subgraph/strategy-mapping";
 import {
 	useMultichainBalances,
 	useOpportunities,
 	useMultichainVaultPositions,
 	useYieldpilotQueryClient,
 } from "@/lib/use-yieldpilot-market-data";
+import { useStrategyAllocations } from "@/lib/subgraph/hooks";
 import type {
 	Opportunity,
 	StrategyLiquidity,
@@ -66,6 +72,7 @@ import type {
 import { cn } from "@/lib/utils";
 import { formatUsd } from "@/lib/yieldpilot-data";
 import { toast } from "sonner";
+import { Input } from "@/components/ui/input";
 
 type RangeKey = "1W" | "1M" | "1Y" | "All";
 
@@ -85,6 +92,16 @@ type ProtocolDepositAsset = {
 	vaultLabel?: string;
 	marketApy?: string;
 };
+
+const ERC20_ABI = [
+	{
+		name: "balanceOf",
+		type: "function",
+		stateMutability: "view",
+		inputs: [{ name: "account", type: "address" }],
+		outputs: [{ name: "", type: "uint256" }],
+	},
+] as const;
 
 const RANGE_OPTIONS: RangeKey[] = ["1W", "1M", "1Y", "All"];
 const DEPOSIT_COLORS = ["#8b7eff", "#d38cf5", "#5ec6ff"] as const;
@@ -178,6 +195,10 @@ function OpportunityDetailPage() {
 	const [depositOpen, setDepositOpen] = useState(false);
 	const [isDepositing, setIsDepositing] = useState(false);
 	const [depositAmount, setDepositAmount] = useState("0");
+	const [withdrawOpen, setWithdrawOpen] = useState(false);
+	const [isWithdrawing, setIsWithdrawing] = useState(false);
+	const [withdrawAmount, setWithdrawAmount] = useState("0");
+	const [protocolATokenBalance, setProtocolATokenBalance] = useState(0);
 	const [depositBalanceSource, setDepositBalanceSource] = useState<
 		"vault" | "wallet"
 	>("vault");
@@ -197,6 +218,7 @@ function OpportunityDetailPage() {
 	const asset = searchParams.get("asset") ?? undefined;
 
 	const currentPage = activeTab === "deposit" ? depositPage : withdrawPage;
+	const { data: allocations } = useStrategyAllocations();
 	const opportunitiesQuery = useOpportunities(
 		asset,
 		protocolSlug,
@@ -322,11 +344,17 @@ function OpportunityDetailPage() {
 		setDepositBalanceSource(source);
 		setDepositAsset(assetItem);
 		setDepositOpen(true);
-		const availableBalance =
-			source === "vault" ? protocolVaultBalance : assetItem.walletBalance;
 		setDepositAmount(
-			availableBalance > 0 ? Math.min(availableBalance, 5000).toString() : "0",
+			source === "vault"
+				? protocolVaultBalance.toString()
+				: assetItem.walletBalance.toString(),
 		);
+	}
+
+	function openProtocolWithdraw() {
+		if (!protocolDepositAsset) return;
+		setWithdrawOpen(true);
+		setWithdrawAmount(protocolATokenBalance.toString());
 	}
 
 	function handleProtocolDeposit() {
@@ -536,6 +564,120 @@ function OpportunityDetailPage() {
 		}
 	}
 
+	async function confirmProtocolWithdraw() {
+		if (!address) {
+			toast.error("Connect your wallet first");
+			return;
+		}
+
+		if (!protocolDepositAsset) {
+			toast.error("No asset selected");
+			return;
+		}
+
+		if (!walletClient || !publicClient) {
+			toast.error("Wallet client is not ready yet");
+			return;
+		}
+
+		const amount = Number(withdrawAmount) || 0;
+		if (amount <= 0) return;
+
+		// Get Aave Pool address
+		const aavePoolAddress = AAVE_POOL_ADDRESSES[chainId];
+		if (!aavePoolAddress) {
+			toast.error("Aave Pool not configured for this chain");
+			return;
+		}
+
+		if (
+			!protocolDepositAsset.tokenAddress ||
+			!protocolDepositAsset.tokenDecimals
+		) {
+			toast.error("Asset configuration incomplete");
+			return;
+		}
+
+		try {
+			setIsWithdrawing(true);
+
+			const parsedAmount = parseUnits(
+				withdrawAmount,
+				protocolDepositAsset.tokenDecimals,
+			);
+			const feeEstimate = await publicClient.estimateFeesPerGas();
+			const feeOverrides =
+				typeof feeEstimate.maxFeePerGas === "bigint" &&
+				typeof feeEstimate.maxPriorityFeePerGas === "bigint"
+					? {
+							maxFeePerGas: feeEstimate.maxFeePerGas,
+							maxPriorityFeePerGas: feeEstimate.maxPriorityFeePerGas,
+						}
+					: typeof feeEstimate.gasPrice === "bigint"
+						? {
+								gasPrice: feeEstimate.gasPrice,
+							}
+						: {};
+
+			toast.message(
+				`Withdrawing ${withdrawAmount} ${protocolDepositAsset.symbol} from Aave...`,
+			);
+
+			const withdrawHash = await walletClient.writeContract({
+				address: aavePoolAddress,
+				abi: aavePoolAbi,
+				functionName: "withdraw",
+				args: [
+					protocolDepositAsset.tokenAddress,
+					parsedAmount,
+					address as Address,
+				],
+				account: walletClient.account,
+				chain: walletClient.chain,
+				...feeOverrides,
+			});
+
+			await publicClient.waitForTransactionReceipt({ hash: withdrawHash });
+
+			await queryClient.invalidateQueries({
+				queryKey: ["yieldpilot", "multichain-balances"],
+			});
+
+			setWithdrawOpen(false);
+			setWithdrawAmount("0");
+			toast.success("Withdrawal successful", {
+				description: `${withdrawAmount} ${protocolDepositAsset.symbol} was withdrawn from Aave.`,
+			});
+		} catch (error) {
+			const message =
+				error instanceof Error
+					? error.message
+					: "Withdrawal transaction failed";
+			toast.error("Withdrawal failed", {
+				description: message,
+			});
+		} finally {
+			setIsWithdrawing(false);
+		}
+	}
+
+	// Fetch aToken balance for protocol withdrawals
+	// Disabled for now as user deposits are vault-routed, not direct protocol deposits
+	useEffect(() => {
+		setProtocolATokenBalance(0);
+	}, [address, publicClient, protocolDepositAsset, chainId]);
+
+	// Auto-open withdraw dialog if coming from End position action
+	useEffect(() => {
+		const action = searchParams.get("action");
+		if (action === "withdraw" && protocolDepositAsset) {
+			setWithdrawOpen(true);
+			setWithdrawAmount(protocolATokenBalance.toString());
+			// Clear params to prevent re-opening on refresh
+			window.history.replaceState({}, "", window.location.pathname);
+		}
+	}, [searchParams, protocolDepositAsset, protocolATokenBalance]);
+
 	// Filter opportunities for charts consistency
 	const topDepositOpportunities = useMemo(
 		() => topOpportunities.filter((opp) => opp.canDeposit),
@@ -672,6 +814,11 @@ function OpportunityDetailPage() {
 							<Wallet className="h-4 w-4" />
 							Deposit
 						</Button>
+						{protocolDepositAsset && protocolATokenBalance > 0 && (
+							<Button variant="outline" onClick={openProtocolWithdraw}>
+								Withdraw
+							</Button>
+						)}
 						{primary.url ? (
 							<Button variant="outline" asChild>
 								<a href={primary.url} target="_blank" rel="noreferrer">
@@ -1416,35 +1563,36 @@ function OpportunityDetailPage() {
 				supportedDepositAssets={
 					protocolDepositAsset ? [protocolDepositAsset] : []
 				}
-				mode="protocol"
 				balanceSource={depositBalanceSource}
 				vaultBalance={protocolVaultBalance}
 				onBalanceSourceChange={(source) => {
 					setDepositBalanceSource(source);
-					const availableBalance =
-						source === "vault"
-							? protocolVaultBalance
-							: (depositAsset?.walletBalance ?? 0);
 					setDepositAmount(
-						availableBalance > 0
-							? Math.min(availableBalance, 5000).toString()
-							: "0",
+						source === "vault"
+							? protocolVaultBalance.toString()
+							: (depositAsset?.walletBalance ?? 0).toLocaleString(undefined, {
+									maximumFractionDigits: 6,
+								}),
 					);
 				}}
 				title={
-					primary?.adapterAvailable
-						? `Deposit to ${primary.protocolName}`
+					protocolDepositAsset
+						? `Deposit to ${primary?.protocolName}`
 						: "Deposit to Vault"
 				}
 				description={
-					primary?.adapterAvailable
-						? `Funds route via the ${primary.protocolName} adapter.`
+					protocolDepositAsset
+						? `Deposit ${protocolDepositAsset.symbol} to earn yield through ${primary?.protocolName}.`
 						: undefined
 				}
+				mode={protocolDepositAsset ? "protocol" : "vault"}
 				onDeposit={() => {
 					if (protocolDepositAsset) {
 						openDeposit(protocolDepositAsset, depositBalanceSource);
 					}
+					setDepositAsset(null);
+					setDepositOpen(false);
+					setDepositBalanceSource("vault");
 				}}
 				onClose={() => {
 					setDepositAsset(null);
@@ -1458,6 +1606,30 @@ function OpportunityDetailPage() {
 				open={depositOpen}
 				onOpenChange={setDepositOpen}
 				walletReady={Boolean(walletClient && publicClient)}
+			/>
+			<ProtocolWithdrawDialog
+				asset={
+					protocolDepositAsset
+						? {
+								...protocolDepositAsset,
+								walletBalance: protocolATokenBalance,
+							}
+						: null
+				}
+				onWithdraw={() => {}}
+				onClose={() => {
+					setWithdrawOpen(false);
+					setWithdrawAmount("0");
+				}}
+				isWithdrawing={isWithdrawing}
+				withdrawAmount={withdrawAmount}
+				setWithdrawAmount={setWithdrawAmount}
+				confirmWithdraw={confirmProtocolWithdraw}
+				open={withdrawOpen}
+				onOpenChange={setWithdrawOpen}
+				walletReady={Boolean(walletClient && publicClient)}
+				title={`Withdraw from ${primary?.protocolName}`}
+				description={`Withdraw ${protocolDepositAsset?.symbol} from ${primary?.protocolName}.`}
 			/>
 		</div>
 	);
