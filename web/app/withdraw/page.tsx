@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useRef } from "react";
+import { Suspense, useEffect, useMemo, useState, useRef } from "react";
 import { useAppKitAccount } from "@reown/appkit/react";
 import { useChainId, usePublicClient, useWalletClient } from "wagmi";
 import { parseUnits, type Address } from "viem";
@@ -137,7 +137,7 @@ function getAssetIconClass(symbol: string) {
 	return map[symbol] ?? "from-neutral-500 to-neutral-700";
 }
 
-export default function WithdrawPage() {
+function WithdrawPageContent() {
 	const { address } = useAppKitAccount();
 	const chainId = useChainId();
 	const searchParams = useSearchParams();
@@ -911,5 +911,13 @@ export default function WithdrawPage() {
 				</DialogContent>
 			</Dialog>
 		</div>
+	);
+}
+
+export default function WithdrawPage() {
+	return (
+		<Suspense fallback={null}>
+			<WithdrawPageContent />
+		</Suspense>
 	);
 }

@@ -1000,12 +1000,23 @@ function marketMeta(opportunity: Opportunity) {
 	return `${opportunity.protocolName} · ${opportunity.assetSymbol}`;
 }
 
+const USD_PEGGED_SYMBOLS = new Set(["USDC", "USDT", "DAI", "FRAX", "USDE"]);
+
 function formatTokenLike(value: number, symbol: string) {
-	const scaled = value >= 1_000_000 ? value / 2_350 : value / 28.5;
-	return `${scaled.toLocaleString(undefined, {
-		minimumFractionDigits: 0,
+	const normalizedSymbol = symbol.toUpperCase();
+
+	if (!Number.isFinite(value)) {
+		return `0 ${normalizedSymbol}`;
+	}
+
+	if (!USD_PEGGED_SYMBOLS.has(normalizedSymbol)) {
+		return formatCompactUsd(value);
+	}
+
+	return `${value.toLocaleString(undefined, {
 		maximumFractionDigits: 2,
-	})} ${symbol}`;
+		notation: value >= 1_000_000 ? "compact" : "standard",
+	})} ${normalizedSymbol}`;
 }
 
 function formatCompactUsd(value: number) {
