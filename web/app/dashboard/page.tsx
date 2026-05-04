@@ -57,6 +57,7 @@ import {
   useTokenPrices,
   useYieldpilotQueryClient,
   type CopilotAnalysisResponse,
+  type CopilotPolicyPreset,
 } from "@/lib/use-yieldpilot-market-data";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
@@ -103,6 +104,14 @@ type StoredCopilotState = {
 type RangeKey = "1D" | "1W" | "1M" | "6M" | "1Y" | "All";
 
 const RANGE_OPTIONS: RangeKey[] = ["1D", "1W", "1M", "6M", "1Y", "All"];
+const COPILOT_POLICY_OPTIONS: Array<{
+  id: CopilotPolicyPreset;
+  label: string;
+}> = [
+  { id: "conservative", label: "Conservative" },
+  { id: "balanced", label: "Balanced" },
+  { id: "yield", label: "Yield" },
+];
 const COPILOT_STORAGE_PREFIX = "kabon:dashboard-copilot";
 
 function readAddress(value: string | undefined): Address | undefined {
@@ -113,11 +122,31 @@ function readAddress(value: string | undefined): Address | undefined {
   return /^0x0{40}$/i.test(value) ? undefined : (value as Address);
 }
 
+function getExecutableStrategyAddress(params: {
+  chainId?: number;
+  symbol?: string;
+  protocolName?: string | null;
+}) {
+  const protocol = params.protocolName?.toLowerCase() ?? "";
+  if (
+    params.chainId === 421614 &&
+    params.symbol?.toUpperCase() === "USDC" &&
+    protocol.includes("aave")
+  ) {
+    return aaveUsdcSepoliaStrategyAddress;
+  }
+
+  return undefined;
+}
+
 const arbitrumSepoliaUsdcTokenAddress = readAddress(
   process.env.NEXT_PUBLIC_ARBITRUM_SEPOLIA_USDC_TOKEN_ADDRESS,
 );
 const robinhoodUsdcTokenAddress = readAddress(
   process.env.NEXT_PUBLIC_ROBINHOOD_USDC_TOKEN_ADDRESS,
+);
+const aaveUsdcSepoliaStrategyAddress = readAddress(
+  process.env.NEXT_PUBLIC_AAVE_USDC_SEPOLIA_STRATEGY_ADDRESS,
 );
 
 const TRACKED_TOKEN_CONFIG: Partial<
@@ -274,10 +303,13 @@ export default function DashboardPage() {
   const [depositAsset, setDepositAsset] = useState<AssetItem | null>(null);
   const [depositAmount, setDepositAmount] = useState("0");
   const [isDepositing, setIsDepositing] = useState(false);
+  const [isRouting, setIsRouting] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
   const [chainsOpen, setChainsOpen] = useState(false);
   const [selectedRange, setSelectedRange] = useState<RangeKey>("1W");
+  const [selectedCopilotPolicy, setSelectedCopilotPolicy] =
+    useState<CopilotPolicyPreset>("balanced");
   const [selectedChartAssetSymbol, setSelectedChartAssetSymbol] = useState<
     string | null
   >(null);
@@ -821,6 +853,17 @@ export default function DashboardPage() {
         : null,
     [assets, copilotResult?.bestOpportunity],
   );
+  const bestCopilotStrategyAddress = getExecutableStrategyAddress({
+    chainId: bestCopilotAsset?.chainId,
+    symbol: bestCopilotAsset?.symbol,
+    protocolName: copilotResult?.bestOpportunity?.protocolName,
+  });
+  const canExecuteCopilotRoute = Boolean(
+    bestCopilotAsset?.vaultAddress &&
+    bestCopilotAsset.depositedAmount &&
+    bestCopilotAsset.depositedAmount > 0 &&
+    bestCopilotStrategyAddress,
+  );
   const copilotReadyCount = useMemo(
     () =>
       Object.values(copilotSignals).filter(
@@ -859,10 +902,12 @@ export default function DashboardPage() {
     scopedAssets: Array<
       AssetItem & { unitPriceUsd: number | null; valueUsd: number | null }
     >,
+    policy: CopilotPolicyPreset,
   ) {
     return JSON.stringify({
       mode: scope.mode,
       focusAssetId: scope.mode === "asset" ? scope.assetId : null,
+      policy,
       assets: scopedAssets.map((asset) => ({
         id: asset.id,
         balance: Number(asset.walletBalance.toFixed(8)),
@@ -925,6 +970,7 @@ export default function DashboardPage() {
       ) as Record<string, CopilotSignal>;
       const restoredResult =
         parsed.result &&
+        Array.isArray(parsed.result.agentSteps) &&
         parsed.result.items.some((item) => currentAssetIds.has(item.assetId))
           ? parsed.result
           : null;
@@ -936,7 +982,11 @@ export default function DashboardPage() {
     }
   }, [copilotStorageKey, walletAssetIdKey]);
 
-  async function openCopilot(scope: CopilotScope) {
+  async function openCopilot(
+    scope: CopilotScope,
+    policyOverride?: CopilotPolicyPreset,
+  ) {
+    const analysisPolicy = policyOverride ?? selectedCopilotPolicy;
     const scopedAssets =
       scope.mode === "asset"
         ? walletAssetsWithMarketData.filter(
@@ -950,9 +1000,10 @@ export default function DashboardPage() {
     }
 
     setCopilotScope(scope);
+    setSelectedCopilotPolicy(analysisPolicy);
     setCopilotOpen(true);
     setCopilotError(null);
-    const cacheKey = buildCopilotCacheKey(scope, scopedAssets);
+    const cacheKey = buildCopilotCacheKey(scope, scopedAssets, analysisPolicy);
     const cached = copilotCacheRef.current.get(cacheKey);
     if (cached) {
       applyCopilotResult(cached);
@@ -975,6 +1026,7 @@ export default function DashboardPage() {
     try {
       const result = await copilotAnalysis.mutateAsync({
         mode: scope.mode,
+        policy: analysisPolicy,
         focusAssetId: scope.mode === "asset" ? scope.assetId : undefined,
         assets: scopedAssets.map((asset) => ({
           id: asset.id,
@@ -1021,6 +1073,13 @@ export default function DashboardPage() {
       if (requestId === copilotRequestRef.current) {
         setCopilotLoading(false);
       }
+    }
+  }
+
+  function handleCopilotPolicySelect(policy: CopilotPolicyPreset) {
+    setSelectedCopilotPolicy(policy);
+    if (copilotScope) {
+      void openCopilot(copilotScope, policy);
     }
   }
 
@@ -1161,6 +1220,79 @@ export default function DashboardPage() {
       });
     } finally {
       setIsDepositing(false);
+    }
+  }
+
+  async function executeCopilotRoute() {
+    if (!bestCopilotAsset || !copilotResult?.bestOpportunity) return;
+
+    const strategyAddress = bestCopilotStrategyAddress;
+    if (!strategyAddress) {
+      router.push(
+        `/protocol/opportunities/asset/${encodeURIComponent(bestCopilotAsset.symbol)}`,
+      );
+      return;
+    }
+
+    if (!bestCopilotAsset.vaultAddress || !bestCopilotAsset.depositedAmount) {
+      openDeposit(bestCopilotAsset);
+      return;
+    }
+
+    if (!walletClient || !publicClient) {
+      toast.error("Wallet client is not ready yet");
+      return;
+    }
+
+    try {
+      setIsRouting(true);
+      const routeAmount = bestCopilotAsset.depositedAmount;
+      const parsedAmount = parseUnits(
+        routeAmount.toString(),
+        bestCopilotAsset.tokenDecimals ?? 6,
+      );
+      const feeEstimate = await publicClient.estimateFeesPerGas();
+      const feeOverrides =
+        typeof feeEstimate.maxFeePerGas === "bigint" &&
+        typeof feeEstimate.maxPriorityFeePerGas === "bigint"
+          ? {
+              maxFeePerGas: feeEstimate.maxFeePerGas,
+              maxPriorityFeePerGas: feeEstimate.maxPriorityFeePerGas,
+            }
+          : typeof feeEstimate.gasPrice === "bigint"
+            ? {
+                gasPrice: feeEstimate.gasPrice,
+              }
+            : {};
+
+      toast.message(
+        `Agent routing ${formatWalletBalance(routeAmount)} ${bestCopilotAsset.symbol} to ${copilotResult.bestOpportunity.protocolName ?? "the approved route"}...`,
+      );
+      const routeHash = await walletClient.writeContract({
+        address: bestCopilotAsset.vaultAddress,
+        abi: yieldPilotVaultAbi,
+        functionName: "deployToStrategy",
+        args: [strategyAddress, parsedAmount],
+        account: walletClient.account,
+        chain: walletClient.chain,
+        ...feeOverrides,
+      });
+      await publicClient.waitForTransactionReceipt({ hash: routeHash });
+
+      await queryClient.invalidateQueries({
+        queryKey: ["yieldpilot", "multichain-vault-positions"],
+      });
+      copilotCacheRef.current.clear();
+      toast.success("Agent route executed", {
+        description: `${formatWalletBalance(routeAmount)} ${bestCopilotAsset.symbol} was routed through the whitelisted adapter.`,
+      });
+    } catch (error) {
+      toast.error("Agent route failed", {
+        description:
+          error instanceof Error ? error.message : "Route transaction failed",
+      });
+    } finally {
+      setIsRouting(false);
     }
   }
 
@@ -1721,6 +1853,62 @@ export default function DashboardPage() {
                       <p className="mt-3 max-w-[560px] text-sm leading-relaxed text-muted-foreground">
                         {copilotResult.narrative}
                       </p>
+                      <div className="mt-5">
+                        <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
+                          Policy
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {COPILOT_POLICY_OPTIONS.map((policy) => (
+                            <button
+                              key={policy.id}
+                              type="button"
+                              onClick={() =>
+                                handleCopilotPolicySelect(policy.id)
+                              }
+                              className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                                selectedCopilotPolicy === policy.id
+                                  ? "border-emerald-500/35 bg-emerald-500/12 text-emerald-300"
+                                  : "border-border/60 bg-muted/20 text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              {policy.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-6">
+                      <div className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground/70">
+                        Agent plan
+                      </div>
+                      <div className="mt-3 space-y-3">
+                        {copilotResult.agentSteps.map((step, index) => (
+                          <div
+                            key={`${step.title}-${index}`}
+                            className="flex gap-3"
+                          >
+                            <span
+                              className={`mt-1 flex size-5 shrink-0 items-center justify-center rounded-full border text-[10px] font-semibold ${
+                                step.status === "complete"
+                                  ? "border-emerald-500/35 bg-emerald-500/12 text-emerald-300"
+                                  : step.status === "ready"
+                                    ? "border-sky-500/35 bg-sky-500/12 text-sky-300"
+                                    : "border-amber-500/35 bg-amber-500/12 text-amber-300"
+                              }`}
+                            >
+                              {index + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <div className="text-sm font-semibold text-foreground">
+                                {step.title}
+                              </div>
+                              <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
+                                {step.description}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                     <div className="mt-6 space-y-5">
                       {copilotResult.drivers.length > 0 ? (
@@ -1787,17 +1975,14 @@ export default function DashboardPage() {
                           type="button"
                           variant="secondary"
                           className="h-10 rounded-full px-3 text-xs font-semibold"
-                          disabled={!copilotResult.bestOpportunity}
-                          onClick={() => {
-                            const symbol =
-                              copilotResult.bestOpportunity?.symbol;
-                            if (!symbol) return;
-                            router.push(
-                              `/protocol/opportunities/asset/${encodeURIComponent(symbol)}`,
-                            );
-                          }}
+                          disabled={!copilotResult.bestOpportunity || isRouting}
+                          onClick={() => void executeCopilotRoute()}
                         >
-                          View route
+                          {isRouting
+                            ? "Routing..."
+                            : canExecuteCopilotRoute
+                              ? "Execute route"
+                              : "View route"}
                         </Button>
                       </div>
                     </div>

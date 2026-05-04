@@ -22,11 +22,60 @@ const copilotAssetSchema = z.object({
 
 const copilotAnalysisRequestSchema = z.object({
   mode: z.enum(["portfolio", "asset"]),
+  policy: z.enum(["conservative", "balanced", "yield"]).default("balanced"),
   assets: z.array(copilotAssetSchema),
   focusAssetId: z.string().optional(),
 });
 
 type CopilotAssetInput = z.infer<typeof copilotAssetSchema>;
+type CopilotPolicyPreset = z.infer<
+  typeof copilotAnalysisRequestSchema
+>["policy"];
+
+type CopilotAgentStep = {
+  title: string;
+  description: string;
+  status: "complete" | "ready" | "blocked";
+};
+
+const POLICY_CONFIG: Record<
+  CopilotPolicyPreset,
+  {
+    label: string;
+    risk: "conservative" | "balanced" | "yield";
+    liquidity: "instant" | "weekly" | "flexible";
+  }
+> = {
+  conservative: {
+    label: "Conservative",
+    risk: "conservative",
+    liquidity: "instant",
+  },
+  balanced: {
+    label: "Balanced",
+    risk: "balanced",
+    liquidity: "instant",
+  },
+  yield: {
+    label: "Yield",
+    risk: "yield",
+    liquidity: "flexible",
+  },
+};
+const AAVE_USDC_SEPOLIA_STRATEGY =
+  process.env.NEXT_PUBLIC_AAVE_USDC_SEPOLIA_STRATEGY_ADDRESS;
+
+function getExecutableProtocols(asset: CopilotAssetInput) {
+  if (
+    AAVE_USDC_SEPOLIA_STRATEGY &&
+    asset.chainId === 421614 &&
+    asset.symbol.toUpperCase() === "USDC"
+  ) {
+    return ["aave", "aave-v3", "aave-v2"];
+  }
+
+  return undefined;
+}
 
 type CopilotAnalysisItem = {
   assetId: string;
@@ -107,6 +156,7 @@ function selectPrimaryAllocation(recommendation: Recommendation) {
 
 async function analyzeAsset(
   asset: CopilotAssetInput,
+  policy: CopilotPolicyPreset,
 ): Promise<CopilotAnalysisItem> {
   if (!asset.supported) {
     const needsVaultMessage =
@@ -143,8 +193,9 @@ async function analyzeAsset(
     const recommendation = await buildRecommendation({
       assetSymbol: asset.symbol,
       amount: Math.max(asset.valueUsd ?? asset.balance, 1),
-      risk: "balanced",
-      liquidity: "instant",
+      risk: POLICY_CONFIG[policy].risk,
+      liquidity: POLICY_CONFIG[policy].liquidity,
+      allowedProtocols: getExecutableProtocols(asset),
     });
     const primary = selectPrimaryAllocation(recommendation);
     const expectedApy = Number(recommendation.expectedApy ?? 0);
@@ -188,8 +239,9 @@ async function analyzeAsset(
         ].slice(0, 5),
         risks: warnings,
         warnings,
-        nextAction:
-          "Open the deposit flow, deposit the supported asset, then review the whitelisted allocation route.",
+        nextAction: primary?.strategy.name
+          ? "Deposit into the vault, then let the agent execute the whitelisted route from this sheet."
+          : "Open the deposit flow, deposit the supported asset, then review the whitelisted allocation route.",
       };
     }
 
@@ -246,7 +298,7 @@ async function analyzeAsset(
       risks: warnings,
       warnings,
       nextAction:
-        "Review the route, then execute only through the configured vault and whitelisted adapter.",
+        "Execute the route from this sheet through the configured vault and whitelisted adapter.",
     };
   } catch (error) {
     const detail =
@@ -279,6 +331,7 @@ async function analyzeAsset(
 
 async function generateNarrative(params: {
   mode: "portfolio" | "asset";
+  policy: CopilotPolicyPreset;
   items: CopilotAnalysisItem[];
   bestOpportunity: CopilotAnalysisItem | null;
 }): Promise<CopilotNarrative | null> {
@@ -296,6 +349,7 @@ async function generateNarrative(params: {
     "Keep every string concise. Use plain product language. Mention that execution is limited to configured vaults and whitelisted adapters when relevant.",
     "",
     `Mode: ${params.mode}`,
+    `Policy: ${POLICY_CONFIG[params.policy].label}`,
     `Best opportunity: ${
       params.bestOpportunity
         ? `${params.bestOpportunity.symbol} via ${params.bestOpportunity.protocolName ?? "deposit first"} at ${params.bestOpportunity.expectedApy.toFixed(2)}% APY`
@@ -388,6 +442,7 @@ async function generateNarrative(params: {
 
 function fallbackNarrative(params: {
   mode: "portfolio" | "asset";
+  policy: CopilotPolicyPreset;
   items: CopilotAnalysisItem[];
   bestOpportunity: CopilotAnalysisItem | null;
 }): CopilotNarrative {
@@ -426,12 +481,56 @@ function fallbackNarrative(params: {
         : `${params.bestOpportunity.symbol} is deposit-ready`,
     summary:
       params.bestOpportunity.depositedBalance > 0
-        ? `${params.bestOpportunity.protocolName ?? "The leading route"} is the strongest approved option at about ${params.bestOpportunity.expectedApy.toFixed(2)}% APY. Execution stays limited to configured vaults and whitelisted adapters.`
-        : `Deposit ${params.bestOpportunity.symbol} into the Kabon vault before allocation. The current leading route is ${params.bestOpportunity.protocolName ?? "available after deposit"} at about ${params.bestOpportunity.expectedApy.toFixed(2)}% APY.`,
+        ? `${params.bestOpportunity.protocolName ?? "The leading route"} is the strongest ${POLICY_CONFIG[params.policy].label.toLowerCase()} policy option at about ${params.bestOpportunity.expectedApy.toFixed(2)}% APY. Execution stays limited to configured vaults and whitelisted adapters.`
+        : `Deposit ${params.bestOpportunity.symbol} into the Kabon vault before allocation. The current ${POLICY_CONFIG[params.policy].label.toLowerCase()} policy route is ${params.bestOpportunity.protocolName ?? "available after deposit"} at about ${params.bestOpportunity.expectedApy.toFixed(2)}% APY.`,
     drivers: params.bestOpportunity.factors.slice(0, 4),
     cautions: params.bestOpportunity.risks.slice(0, 3),
     nextAction: params.bestOpportunity.nextAction,
   };
+}
+
+function buildAgentSteps(params: {
+  policy: CopilotPolicyPreset;
+  bestOpportunity: CopilotAnalysisItem | null;
+}) {
+  const best = params.bestOpportunity;
+  const hasRoute = Boolean(best?.protocolName);
+  const hasVaultPosition = (best?.depositedBalance ?? 0) > 0;
+
+  return [
+    {
+      title: "Read wallet and vault state",
+      description:
+        "Balances, vault deposits, chain support, liquidity, and pricing are loaded from the dashboard.",
+      status: "complete",
+    },
+    {
+      title: `Apply ${POLICY_CONFIG[params.policy].label} policy`,
+      description:
+        params.policy === "conservative"
+          ? "Prioritize supported assets with immediate liquidity and lower route risk."
+          : params.policy === "yield"
+            ? "Prioritize the highest approved APY while keeping execution contract-bounded."
+            : "Balance APY, liquidity, route readiness, and vault support.",
+      status: "complete",
+    },
+    {
+      title: "Check approved route",
+      description: hasRoute
+        ? `${best?.symbol ?? "Asset"} has a configured route candidate through ${best?.protocolName}.`
+        : "No approved strategy adapter is ready for the selected asset set.",
+      status: hasRoute ? "ready" : "blocked",
+    },
+    {
+      title: hasVaultPosition
+        ? "Route through adapter"
+        : "Deposit before routing",
+      description: hasVaultPosition
+        ? "Use the protocol route view to deploy vault liquidity through the whitelisted adapter."
+        : "Deposit into the Kabon vault first, then review the whitelisted allocation route.",
+      status: best ? "ready" : "blocked",
+    },
+  ] satisfies CopilotAgentStep[];
 }
 
 export async function POST(request: Request) {
@@ -443,7 +542,7 @@ export async function POST(request: Request) {
         : body.assets;
 
     const items = await Promise.all(
-      scopedAssets.map((asset) => analyzeAsset(asset)),
+      scopedAssets.map((asset) => analyzeAsset(asset, body.policy)),
     );
     const bestOpportunity =
       items
@@ -458,6 +557,7 @@ export async function POST(request: Request) {
     const generatedAt = new Date().toISOString();
     const aiNarrative = await generateNarrative({
       mode: body.mode,
+      policy: body.policy,
       items,
       bestOpportunity,
     });
@@ -465,6 +565,7 @@ export async function POST(request: Request) {
       aiNarrative ??
       fallbackNarrative({
         mode: body.mode,
+        policy: body.policy,
         items,
         bestOpportunity,
       });
@@ -476,6 +577,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       mode: body.mode,
+      policy: body.policy,
       title:
         body.mode === "asset" ? `${subject} analysis` : "Portfolio analysis",
       subtitle:
@@ -487,6 +589,10 @@ export async function POST(request: Request) {
       drivers: narrative.drivers,
       cautions: narrative.cautions,
       nextAction: narrative.nextAction,
+      agentSteps: buildAgentSteps({
+        policy: body.policy,
+        bestOpportunity,
+      }),
       bestOpportunity,
       items,
       generatedAt,

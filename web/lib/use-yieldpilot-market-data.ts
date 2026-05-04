@@ -101,8 +101,15 @@ export type CopilotAnalysisItem = {
   warnings: string[];
   nextAction: string;
 };
+export type CopilotPolicyPreset = "conservative" | "balanced" | "yield";
+export type CopilotAgentStep = {
+  title: string;
+  description: string;
+  status: "complete" | "ready" | "blocked";
+};
 export type CopilotAnalysisResponse = {
   mode: "portfolio" | "asset";
+  policy: CopilotPolicyPreset;
   title: string;
   subtitle: string;
   narrative: string;
@@ -110,6 +117,7 @@ export type CopilotAnalysisResponse = {
   drivers: string[];
   cautions: string[];
   nextAction: string;
+  agentSteps: CopilotAgentStep[];
   bestOpportunity: CopilotAnalysisItem | null;
   items: CopilotAnalysisItem[];
   generatedAt: string;
@@ -469,6 +477,7 @@ export function useRecommendationMutation() {
 
 export async function fetchCopilotAnalysis(input: {
   mode: "portfolio" | "asset";
+  policy: CopilotPolicyPreset;
   assets: CopilotAssetInput[];
   focusAssetId?: string;
 }) {
