@@ -1,20 +1,21 @@
 # Kabon Web
 
-Next.js frontend for the Kabon product experience. This app presents vault-related views such as dashboard, activity, recommendation, deposit-oriented flows, and withdrawals, while also wiring wallet connectivity and app-facing API routes.
+Kabon Web is the Next.js frontend for Kabon's vault-oriented treasury experience. It combines wallet connectivity, deposit and withdrawal surfaces, live market data, protocol exploration, and policy-aware recommendation flows for supported vault routes.
 
-## Current Product State
+## Product Scope
 
-Status checked on April 29, 2026:
+The application provides:
 
-- the main product experience lives on `/`, which now acts as the live dashboard, deposit flow, and copilot surface
-- wallet connect and vault deposit flow are wired for supported chains when env vars are present
-- protocol and opportunity pages are pulling live Arbitrum market data
-- recommendation generation is live and combines protocol data, portfolio context, and policy-aware ranking
-- Robinhood Chain wallet assets and tokenized-equity balances are surfaced in the dashboard
-- supported Robinhood RWA symbols now use Polygon / Massive-backed stock pricing and history when configured
-- `/policy` and `/recommendation` currently redirect to `/`
-- `/withdraw` and `/activity` are part of the product surface and ready for deeper live integration
-- allocation approval / execution UX is still product framing rather than a completed end-to-end operator flow
+- a wallet-aware dashboard for balances, supported assets, and vault actions
+- deposit flows wired to configured vault contracts
+- copilot recommendations that explain route selection with risk, liquidity, and APY context
+- live Arbitrum protocol and opportunity data
+- protocol explorer and opportunity detail pages
+- withdrawal and activity surfaces for exit visibility and vault history
+- Robinhood Chain testnet wallet support for RWA-oriented workflows
+- Polygon / Massive-backed stock pricing and history for supported tokenized-equity symbols when configured
+
+The primary product experience is served from `/`, with supporting routes for protocol research, activity, withdrawals, and swap access.
 
 ## Stack
 
@@ -27,43 +28,16 @@ Status checked on April 29, 2026:
 - Drizzle ORM
 - Recharts
 
-## What The App Covers
-
-Current product surfaces include:
-
-- homepage dashboard for connected balances, supported deposit assets, and copilot recommendations
-- deposit flow wired to configured vault contracts
-- protocol explorer and protocol opportunity detail pages
-- withdrawal and activity routes
-- activity views
-- wallet connection and chain-aware UX
-- Robinhood Chain testnet wallet support for RWA-oriented product positioning
-- API routes for assets, protocols, opportunities, recommendations, and shared crypto / equity market data
-
 ## Routes
 
-- `/`: primary Kabon dashboard, wallet-aware deposit flow, and copilot recommendation surface
+- `/`: primary dashboard, wallet-aware deposit flow, and copilot recommendation surface
 - `/protocol`: live Arbitrum protocol dashboard
-- `/protocol/opportunities/[protocolSlug]`: protocol-level detail page with live opportunity snapshots
+- `/protocol/opportunities/[protocolSlug]`: protocol-level detail page with opportunity snapshots
 - `/swap`: embedded swap widget
 - `/activity`: wallet and vault activity surface
 - `/withdraw`: withdrawal and unwind visibility surface
 - `/policy`: redirects to `/`
 - `/recommendation`: redirects to `/`
-
-## Wallet Setup
-
-Wallet connectivity is handled with Reown AppKit.
-
-Required environment variable:
-
-```bash
-NEXT_PUBLIC_REOWN_PROJECT_ID=your_project_id
-```
-
-Example env file:
-
-- [web/.env.example](C:\Users\hp\Desktop\arbs-london\web.env.example)
 
 ## Local Development
 
@@ -91,41 +65,47 @@ Run the production server locally:
 bun run start
 ```
 
-## Environment
+## Environment Configuration
 
-At minimum, local wallet flows require the Reown project ID.
+Wallet connectivity is handled through Reown AppKit.
 
-Depending on which API-backed or database-backed paths you use, you may also need additional environment variables for:
+Required:
 
-- RPC access
-- database connectivity
-- third-party data sources
-- vault address configuration for each supported asset and chain
+```bash
+NEXT_PUBLIC_REOWN_PROJECT_ID=your_project_id
+```
 
-If you expand the app beyond the current prototype state, document those variables in `.env.example` and keep this README in sync.
+Example environment file:
 
-Current deposit integration expects:
+- [.env.example](./.env.example)
 
-- `NEXT_PUBLIC_ARBITRUM_USDC_VAULT_ADDRESS`
-- `NEXT_PUBLIC_ARBITRUM_SEPOLIA_USDC_TOKEN_ADDRESS`
-- `NEXT_PUBLIC_ARBITRUM_SEPOLIA_USDC_VAULT_ADDRESS`
-- `NEXT_PUBLIC_ROBINHOOD_USDC_TOKEN_ADDRESS`
-- `NEXT_PUBLIC_ROBINHOOD_USDC_VAULT_ADDRESS`
+Vault and chain-specific deposit flows may also require:
 
-If those vault variables are missing, the UI still loads, but live deposit actions for the affected chain will stay unavailable.
+```bash
+NEXT_PUBLIC_ARBITRUM_USDC_VAULT_ADDRESS=
+NEXT_PUBLIC_ARBITRUM_SEPOLIA_USDC_TOKEN_ADDRESS=
+NEXT_PUBLIC_ARBITRUM_SEPOLIA_USDC_VAULT_ADDRESS=
+NEXT_PUBLIC_ROBINHOOD_USDC_TOKEN_ADDRESS=
+NEXT_PUBLIC_ROBINHOOD_USDC_VAULT_ADDRESS=
+NEXT_PUBLIC_AAVE_USDC_SEPOLIA_STRATEGY_ADDRESS=
+```
 
-For production-grade tokenized-equity pricing and chart history, add:
+If a vault address is not configured, the app still loads, but live deposit actions for that chain or asset remain unavailable.
 
-- `POLYGON_API_KEY`
-- `STOCK_MARKET_DATA_PROVIDER=polygon`
+For production-grade tokenized-equity pricing and chart history:
 
-There is now a second, better config path for vault deployments:
+```bash
+POLYGON_API_KEY=
+STOCK_MARKET_DATA_PROVIDER=polygon
+```
 
-- [web/lib/generated/vault-addresses.json](C:\Users\hp\Desktop\arbs-london\web\lib\generated\vault-addresses.json)
+Vault deployments can also be wired through the generated address file:
 
-The contracts deploy script updates that generated file automatically, so frontend vault wiring no longer has to rely only on hand-edited env vars.
+- [lib/generated/vault-addresses.json](./lib/generated/vault-addresses.json)
 
-## App Structure
+The contracts deployment script updates this file automatically, reducing the need for manually edited frontend vault variables.
+
+## Application Structure
 
 ```text
 web/
@@ -140,82 +120,48 @@ web/
 
 ## Supported Networks
 
-The app is currently Arbitrum-first, with Robinhood Chain testnet support added at the wallet layer:
+The app is Arbitrum-first, with Robinhood Chain testnet support at the wallet layer:
 
 - Arbitrum One
 - Arbitrum Sepolia
 - Robinhood Chain Testnet
 
-Important nuance:
+Current network responsibilities:
 
-- live asset, protocol, opportunity, and recommendation APIs are still centered on Arbitrum market data
-- Robinhood Chain support currently improves wallet/network readiness and the product story around tokenized assets and RWAs
-- Robinhood stock-token contract discovery is now seeded from official Robinhood documentation in the fallback asset registry
-- Robinhood wallet valuation and charting now support a production-grade Polygon / Massive stock market data path
-- Robinhood-specific yield / protocol opportunity ingestion is still not complete
+- Arbitrum provides the primary market, protocol, opportunity, and recommendation data.
+- Arbitrum Sepolia supports live vault and strategy route demonstration.
+- Robinhood Chain testnet support enables wallet readiness and tokenized-asset product positioning.
+- Robinhood-specific yield opportunity ingestion is not yet complete.
 
-## Recommendation Engine
+## Recommendation And AI Layer
 
-The current recommendation layer is already implemented:
+Kabon's AI layer is exposed through the product as a vault copilot. It is intended to help users understand allocation choices before they interact with vault routes, not to act as an unrestricted trading agent.
 
-- it uses live Arbitrum protocol and yield data
-- it scores opportunities against risk and liquidity presets
-- it returns structured allocations, rationale, expected APY, and warnings
-- it supports copilot-style guidance inside the product experience
+The recommendation flow:
+
+- uses live Arbitrum protocol and yield data
+- incorporates portfolio context from the connected wallet where available
+- applies user risk and liquidity preferences
+- respects supported assets, configured vaults, and whitelisted strategy routes
+- scores opportunities against risk and liquidity presets
+- returns structured allocations, rationale, expected APY, and warnings
+- presents policy-aware guidance inside the main product flow
+
+The AI-facing experience should help reviewers see:
+
+- why a specific route is being recommended
+- which tradeoffs matter for the selected asset and chain
+- whether liquidity, APY, or risk is driving the recommendation
+- what constraints prevent unsupported or unsafe execution paths
+- how withdrawals and unwind expectations affect the decision
+
+Execution remains contract-bounded. AI output can explain and rank routes, but user actions and vault operations remain constrained by the deployed contracts, configured addresses, and approved adapters.
 
 Recommended product description:
 
-"A policy-driven copilot that explains and ranks compliant vault allocation routes."
+> Kabon is a policy-driven vault copilot that explains and ranks compliant allocation routes.
 
-## UX Notes
-
-The current interface is designed around a vault product rather than a generic wallet:
-
-- users are oriented around a shared vault position
-- withdrawal messaging focuses on idle liquidity versus unwind requirements
-- recommendation data is folded into the product flow rather than isolated as a separate research surface
-- supported networks now reflect both current Arbitrum execution paths and a Robinhood Chain expansion path for tokenized assets
-
-## Limitations
-
-- some screens are still presentation-first rather than production-integrated
-- frontend routes may rely on app-defined data models while backend integrations evolve
-- wallet UX is present, but operator workflows and full transaction orchestration will need additional integration work
-- the dedicated withdraw page does not yet reflect live queue state or recall progress
-- the activity page does not yet index deployed contract events
-- the policy and recommendation experiences are currently unified into the homepage flow
-
-## Related Docs
-
-- [root README](C:\Users\hp\Desktop\arbs-london\README.md)
-- [contracts README](C:\Users\hp\Desktop\arbs-london\contracts\README.md)
-
-## Devpost / Hackathon Copy Pack
-
-### Short Description
-
-Kabon is a policy-driven DeFi vault interface where users deposit once and use a copilot to evaluate and explain compliant yield routes on Arbitrum, with Robinhood Chain support for expansion.
-
-### Full Description
-
-Kabon addresses a practical DeFi problem: yield management is fragmented, time-consuming, and difficult to unwind safely. The web app presents a vault-oriented experience where users can deposit supported assets, review copilot recommendations, inspect live protocol data, and follow withdrawal expectations around a whitelisted vault allocation model.
-
-### Demo Narration Script (2 minutes)
-
-1. "Kabon helps users avoid manual strategy hopping by using a shared vault model."
-2. Connect wallet and confirm you are on a supported chain.
-3. Open deposit flow, select asset, and submit vault deposit transaction.
-4. Show Kabon Copilot and explain why a route is preferred using live APY, liquidity, and risk context.
-5. Open the protocol explorer to validate the recommendation against current market venues.
-6. Close with: "one vault position, policy-guided allocation, and clearer risk/exit visibility."
-
-### Judging Criteria Mapping (Frontend)
-
-- **Product-market fit**: simplified UX for repetitive yield operations
-- **Innovation**: combines agentic recommendation framing with transaction-capable vault UX
-- **Real problem solving**: reduces operational complexity around discovery, deployment, and exits
-
-### Reviewer Quickstart
+## Reviewer Quickstart
 
 ```bash
 cd web
@@ -223,12 +169,30 @@ bun install
 bun run dev
 ```
 
-Set required environment variables in `.env.local` (see wallet and vault variables above) before running the demo.
+Set the required environment variables in `.env.local` before reviewing wallet, vault, or API-backed flows.
 
-## Verification Notes
+## Hackathon Evaluation Notes
 
-On April 29, 2026:
+The web application is designed to demonstrate the complete product direction:
 
-- contract tests passed locally in the `contracts` workspace
-- the web production build could not be cleanly re-run because another `next build` process was already active in the environment at the time of verification
-- Robinhood stock-token pricing/history was verified through the app API routes after the shared market-data provider refactor
+- connect a wallet on a supported network
+- view balances and supported vault assets
+- initiate a vault deposit where addresses are configured
+- review AI copilot route recommendations and rationale
+- inspect live protocol opportunity data
+- review withdrawal and activity surfaces that reflect the vault-based product model
+
+The frontend is transaction-aware and wired for the live Arbitrum Sepolia vault route, while some operator and indexer-backed flows remain staged for production integration.
+
+## Limitations
+
+- Full operator transaction orchestration still requires additional integration work.
+- The dedicated withdrawal page does not yet reflect live queue state or recall progress.
+- The activity page is structured for vault history but is not yet fully backed by deployed contract event indexing.
+- Robinhood Chain support currently focuses on wallet and asset readiness rather than live yield route ingestion.
+- `/policy` and `/recommendation` are currently consolidated into the homepage product flow.
+
+## Related Documentation
+
+- [Root README](../README.md)
+- [Contracts README](../contracts/README.md)

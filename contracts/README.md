@@ -1,44 +1,42 @@
 # Kabon Contracts
 
-Smart contracts for Kabon's shared-vault architecture, built with Hardhat 3, Ignition, viem, and OpenZeppelin.
+Smart contracts for Kabon's vault-mediated treasury architecture, built with Hardhat 3, Ignition, viem, and OpenZeppelin.
 
 ## Overview
 
-The contracts workspace centers on a single ERC-4626 vault implementation per supported asset. Users deposit the underlying token and receive vault shares. Strategy execution is abstracted behind whitelisted adapters, while withdrawals are serviced from idle liquidity first and then from strategy recalls if needed.
+The contracts workspace centers on one ERC-4626 vault implementation per supported asset. Users deposit the underlying token and receive vault shares. Strategy execution is abstracted behind whitelisted adapters, while withdrawals are serviced from idle liquidity first and then from strategy recalls when required.
 
 Core components:
 
-- `YieldPilotVault.sol`: upgradeable ERC-4626 vault, admin controls, liquidity management, and strategy interactions
+- `YieldPilotVault.sol`: upgradeable ERC-4626 vault with admin controls, liquidity management, and strategy interactions
 - `YieldPilotVaultStrategyManager.sol`: strategy whitelist state, active-strategy tracking, accounting, and withdrawal queue management
 - `IStrategyAdapter.sol`: interface each strategy adapter must satisfy
 - `YieldPilotVaultUpgradeMock.sol`: test-only upgrade target used to verify storage continuity and upgrade execution
-- mocks for assets and adversarial adapters used in the test suite
+- mock assets and adversarial adapters used by the test suite
 
-## Contract Execution Model
+## Execution Model
 
-The contract system is built around vault-mediated execution rather than direct protocol-by-protocol interaction from the user wallet.
+Kabon uses vault-mediated execution rather than direct protocol-by-protocol interaction from each user wallet:
 
-Instead:
+1. Users deposit assets into a Kabon ERC-4626 vault.
+2. The vault mints shares representing each user position.
+3. Approved route execution deploys idle vault liquidity into whitelisted strategy adapters.
+4. Withdrawals are served from idle liquidity first, then through strategy recalls using the configured queue.
 
-1. users deposit assets into a Kabon ERC-4626 vault
-2. the vault mints shares representing the user position
-3. approved route execution deploys idle vault liquidity into whitelisted strategy adapters
-4. withdrawals are serviced from idle liquidity first, then from recalls through the configured queue
-
-Protocol execution is therefore adapter-mediated and vault-level, while the user-facing product remains share-based.
+Protocol-specific behavior lives in adapters, while the user-facing position remains share-based.
 
 ## Vault Mechanics
 
-### User flow
+### User Flow
 
-1. a user deposits an ERC-20 asset
-2. the vault mints ERC-4626 shares to the user
-3. approved route execution can deploy idle assets into approved strategies
-4. a user withdraws by redeeming shares for underlying assets
-5. if the vault does not have enough idle assets, it recalls capital from strategies using the configured withdrawal queue
-6. optional unwind fees can be charged only on the withdrawal portion that requires strategy recalls
+1. A user deposits an ERC-20 asset.
+2. The vault mints ERC-4626 shares to the user.
+3. Approved route execution can deploy idle assets into approved strategies.
+4. A user withdraws by redeeming shares for underlying assets.
+5. If the vault does not have enough idle assets, it recalls capital from strategies using the configured withdrawal queue.
+6. Optional unwind fees can be charged only on the withdrawal portion that requires strategy recalls.
 
-### Accounting model
+### Accounting Model
 
 `totalAssets()` is defined as:
 
@@ -47,20 +45,20 @@ Protocol execution is therefore adapter-mediated and vault-level, while the user
 
 The vault keeps per-strategy accounting and supports `syncStrategyAssets(...)` so gains or paused-loss events can be reflected in vault accounting.
 
-### Withdrawal fee model
+### Withdrawal Fee Model
 
-The vault can optionally charge an unwind withdrawal fee.
+The vault can optionally charge an unwind withdrawal fee:
 
 - the owner sets `feeRecipient` and `unwindFeeBps`
 - the fee is `0` when idle liquidity fully covers a withdrawal
 - the fee applies only to the portion of a withdrawal that exceeds current idle liquidity
 - `withdraw(...)` preserves the caller's requested net assets and burns additional shares to cover the unwind fee
 - `redeem(...)` burns the requested shares and reduces the receiver's net assets by the unwind fee when a strategy recall is required
-- the Ignition deployment module defaults `unwindFeeBps` to `500`, which is `5%`
+- the Ignition deployment module defaults `unwindFeeBps` to `500`, or `5%`
 
-### Strategy model
+### Strategy Model
 
-Strategies are external adapter contracts, not embedded protocol integrations. Each adapter must:
+Strategies are external adapter contracts. Each adapter must:
 
 - manage a single asset matching the vault asset
 - expose `asset()`
@@ -72,31 +70,29 @@ The vault only interacts with whitelisted adapters.
 
 ## Security Properties
 
-The current implementation includes the following hardening:
+The current implementation includes:
 
 - transparent proxy deployment with initializer locking on the implementation
 - non-reentrant vault entrypoints and strategy interaction flows
 - explicit pause controls for deposits and strategy deployment
-- two-step ownership transfer via `Ownable2StepUpgradeable`
+- two-step ownership transfer through `Ownable2StepUpgradeable`
 - disabled ownership renounce to avoid permanently orphaning controls
 - rejection of fee-on-transfer or short-receipt asset behavior during deposits
-- rejection of strategy deploy/recall misreporting based on actual token balance deltas
+- rejection of strategy deploy and recall misreporting based on actual token balance deltas
 - requirement that realized strategy losses can only be synced while the vault is paused
 
-## Important Trust Boundaries
+## Trust Boundaries
 
-The vault is safer than the original version, but it is not trustless.
-
-Production assumptions still include:
+The vault introduces meaningful controls, but it is not fully trustless. Production assumptions include:
 
 - the owner is trusted to manage pause, strategy whitelist, withdrawal queue, recall, and sync operations
 - the proxy admin is trusted to perform upgrades safely
 - each whitelisted strategy adapter is trusted code and must be reviewed separately
-- `syncStrategyAssets(...)` still relies on the adapter's reported `totalAssets()` value
+- `syncStrategyAssets(...)` relies on the adapter's reported `totalAssets()` value
 
-note: route execution calls are currently permissionless on approved/whitelisted adapters to maximize demo UX.
+For production deployments, the owner and proxy admin should be controlled by a multisig or timelock.
 
-For real deployments, the owner and proxy admin should be multisig or timelock controlled.
+Route execution is currently permissionless for approved adapters to support a streamlined review flow. Production deployments should revisit this permission model.
 
 ## Project Structure
 
@@ -155,13 +151,13 @@ The repository uses Hardhat Ignition with an OpenZeppelin transparent proxy.
 
 Deployment flow:
 
-1. deploy `YieldPilotVault`
-2. deploy `TransparentUpgradeableProxy`
-3. initialize the vault through the proxy
-4. recover the auto-created `ProxyAdmin`
-5. interact with the vault through the proxy address
+1. Deploy `YieldPilotVault`.
+2. Deploy `TransparentUpgradeableProxy`.
+3. Initialize the vault through the proxy.
+4. Recover the auto-created `ProxyAdmin`.
+5. Interact with the vault through the proxy address.
 
-Local example:
+Local deployment example:
 
 ```bash
 npx hardhat ignition deploy ignition/modules/YieldPilotVaultProxy.ts --parameters ignition/parameters/local-vault.json
@@ -171,13 +167,13 @@ Example parameter file:
 
 ```json
 {
-	"YieldPilotVaultProxyModule": {
-		"asset": "0xYourAssetAddress",
-		"name": "Kabon USDC Vault",
-		"symbol": "kbUSDC",
-		"feeRecipient": "0xYourTreasuryAddress",
-		"unwindFeeBps": 500
-	}
+  "YieldPilotVaultProxyModule": {
+    "asset": "0xYourAssetAddress",
+    "name": "Kabon USDC Vault",
+    "symbol": "kbUSDC",
+    "feeRecipient": "0xYourTreasuryAddress",
+    "unwindFeeBps": 500
+  }
 }
 ```
 
@@ -191,45 +187,43 @@ Example upgrade parameter file:
 
 ```json
 {
-	"YieldPilotVaultProxyModule": {
-		"asset": "0xYourAssetAddress",
-		"name": "Kabon USDC Vault",
-		"symbol": "kbUSDC",
-		"feeRecipient": "0xYourTreasuryAddress",
-		"unwindFeeBps": 500
-	},
-	"YieldPilotVaultUpgradeModule": {
-		"reserveTargetBps": 2000
-	}
+  "YieldPilotVaultProxyModule": {
+    "asset": "0xYourAssetAddress",
+    "name": "Kabon USDC Vault",
+    "symbol": "kbUSDC",
+    "feeRecipient": "0xYourTreasuryAddress",
+    "unwindFeeBps": 500
+  },
+  "YieldPilotVaultUpgradeModule": {
+    "reserveTargetBps": 2000
+  }
 }
 ```
 
-### Supported-chain vault deployment script
-
-For the hackathon flow, the fastest path is now the supported-chain deploy script:
+## Supported-Chain Deployment Script
 
 ```bash
 cd contracts
 DEPLOY_ASSET=USDC npx hardhat run scripts/deploy-supported-vault.ts --network arbitrumSepolia
 ```
 
-That script will:
+The script:
 
-1. deploy a new `YieldPilotVault` implementation
-2. deploy a new `TransparentUpgradeableProxy`
-3. initialize the proxy-backed vault for the selected asset
-4. configure the withdrawal fee
-5. write the deployed vault address into [web/lib/generated/vault-addresses.json](C:\Users\hp\Desktop\arbs-london\web\lib\generated\vault-addresses.json)
+1. deploys a new `YieldPilotVault` implementation
+2. deploys a new `TransparentUpgradeableProxy`
+3. initializes the proxy-backed vault for the selected asset
+4. configures the withdrawal fee
+5. writes the deployed vault address into [../web/lib/generated/vault-addresses.json](../web/lib/generated/vault-addresses.json)
 
-Current supported networks for the script:
+Supported networks:
 
 - `arbitrum`
 - `arbitrumSepolia`
 - `robinhoodChainTestnet`
 
-Current supported assets for the script are tracked in [contracts/config/supported-assets.ts](C:\Users\hp\Desktop\arbs-london\contracts\config\supported-assets.ts).
+Supported assets are tracked in [config/supported-assets.ts](./config/supported-assets.ts).
 
-Required environment variables for remote deploys:
+Required environment variables for remote deployments:
 
 ```bash
 ARBITRUM_RPC_URL=
@@ -250,7 +244,7 @@ DEPLOY_ASSET=AMZN npx hardhat run scripts/deploy-supported-vault.ts --network ro
 
 ## Test Coverage
 
-The current suite covers:
+The test suite covers:
 
 - proxy deployment and proxy admin recovery
 - deposits into the proxy-backed vault
@@ -262,31 +256,23 @@ The current suite covers:
 - upgrade execution and storage continuity
 - implementation initializer locking
 - rejection of unsupported fee-on-transfer asset behavior
-- rejection of strategy deploy/recall misreporting
+- rejection of strategy deploy and recall misreporting
 - two-step ownership transfer behavior
 - blocked ownership renounce
 - loss sync requiring the vault to be paused first
 
-## Operator Notes
-
-- One vault instance should manage one asset only.
-- Do not whitelist a strategy adapter until its accounting and withdrawal semantics have been reviewed.
-- Do not use the default local deployer account model for production governance.
-- Treat upgrades as governance actions with review, simulation, and signoff.
-- Treat `syncStrategyAssets(...)` as an operator action that should be monitored and logged.
-
-## Hackathon Live Route Quickstart
+## Live Route Quickstart
 
 ```bash
 cd contracts
 
-# 1) deploy vault (updates ../web/lib/generated/vault-addresses.json)
+# 1. Deploy vault and update ../web/lib/generated/vault-addresses.json.
 DEPLOY_ASSET=USDC npm run deploy:vault -- --network arbitrumSepolia
 
-# 2) confirm route selectors on deployed proxy
+# 2. Confirm route selectors on the deployed proxy.
 PROXY_ADDRESS=0x23d80c8c231d7bf671ac54cd5854728535063254 npm run proxy:info -- --network arbitrumSepolia
 
-# 3) deploy + whitelist real Aave strategy adapter
+# 3. Deploy and whitelist the Aave strategy adapter.
 VAULT_ADDRESS=0x23d80c8c231d7bf671ac54cd5854728535063254 \
 AAVE_POOL_ADDRESS=0xBfC91D59fdAA134A4ED45f7B584cAf96D7792Eff \
 AAVE_ATOKEN_ADDRESS=0x460b97BD498E1157530AEb3086301d5225b91216 \
@@ -294,50 +280,30 @@ ASSET_ADDRESS=0x75faf114eafb1BDbe2F0316DF893fd58CE46AA4d \
 npm run deploy:aave-strategy -- --network arbitrumSepolia
 ```
 
-Whitelisting script proof screenshot:
+Whitelisting proof:
 
 ![Whitelisted route script output](../whitelisted-route.png)
+
+## Reviewer Guidance
+
+For a focused review:
+
+1. Inspect `YieldPilotVault.sol` and `YieldPilotVaultStrategyManager.sol`.
+2. Review pause, ownership, strategy whitelist, and withdrawal queue controls.
+3. Run the contract test suite.
+4. Validate the proxy deployment flow through the Ignition modules.
+
+The contract layer demonstrates a real upgradeable ERC-4626 vault, whitelisted strategy execution, queue-based unwind behavior, and guardrails for common integration risks.
+
+## Operator Notes
+
+- One vault instance should manage one asset only.
+- Do not whitelist a strategy adapter until its accounting and withdrawal behavior have been reviewed.
+- Do not use the default local deployer account model for production governance.
+- Treat upgrades as governance actions with review, simulation, and signoff.
+- Treat `syncStrategyAssets(...)` as an operator action that should be monitored and logged.
 
 ## References
 
 - [Hardhat Ignition upgradeable proxy guide](https://hardhat.org/ignition/docs/guides/upgradeable-proxies)
 - [OpenZeppelin ERC-4626 documentation](https://docs.openzeppelin.com/contracts/5.x/erc4626)
-
-## Hackathon Smart Contract Summary
-
-Status checked on April 27, 2026:
-
-- the contract suite passes locally
-- deposit, withdraw, allocation, unwind, upgrade, and guardrail behavior are covered in tests
-- this workspace is ahead of the current deployed-demo state; the remaining gap is live deployment and frontend wiring, not base vault behavior
-
-### What The Contracts Prove In The Submission
-
-- Kabon uses a real upgradeable ERC-4626 vault rather than a mock balance tracker
-- strategy execution is constrained to whitelisted adapters
-- withdrawals model actual operational unwind behavior through idle-liquidity checks and queue-based recalls
-- the architecture supports “allocation on behalf of depositors” at the vault layer without requiring users to manage each protocol leg individually
-
-### Why This Contract Design Fits Judging
-
-- **Smart contract quality**: upgradeable ERC-4626 architecture with explicit strategy accounting and unwind controls
-- **Security posture**: reentrancy protections, short-receipt checks, strategy misreport rejection, ownership safety controls
-- **Operational realism**: withdrawal queue and paused-loss-sync model align with real unwind scenarios
-
-### What Reviewers Should Verify Quickly
-
-```bash
-cd contracts
-yarn install
-npx hardhat compile
-npx hardhat test
-```
-
-Expected result: all tests pass, including proxy deployment, unwind behavior, fee behavior, reentrancy defenses, and upgrade continuity tests.
-
-### Suggested Judge Walkthrough
-
-1. review `YieldPilotVault.sol` and strategy manager separation
-2. inspect pause, ownership, and strategy whitelist controls
-3. run tests and confirm edge-case coverage
-4. validate deployment flow through Ignition proxy module
